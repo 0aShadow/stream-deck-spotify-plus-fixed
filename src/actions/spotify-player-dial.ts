@@ -170,6 +170,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         streamDeck.logger.info("onDialDown triggered");
         const url = ev.payload.settings.imgUrl;
         this.sendAction('dialDown', url)
+            .then(() => this.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialDown: ${error}`));
     }
 
@@ -177,6 +178,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         streamDeck.logger.info("onDialUp triggered");
         const url = ev.payload.settings.imgUrl;
         this.sendAction('dialUp', url)
+            .then(() => this.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialUp: ${error}`));
     }
 
@@ -184,6 +186,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         streamDeck.logger.info(`onDialRotate triggered with ticks: ${ev.payload.ticks}`);
         const url = ev.payload.settings.imgUrl;
         this.sendAction('rotate', url, ev.payload.ticks)
+            .then(() => this.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialRotate: ${error}`));
     }
 }

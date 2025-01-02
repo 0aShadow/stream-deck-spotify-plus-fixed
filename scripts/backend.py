@@ -187,6 +187,7 @@ class SpotifyTrackInfo:
         )
         self.image_handler = SpotifyImageHandler(self.sp)
         self.last_track_info = None
+        self.is_playing = False
 
     def create_status_images(self, current_track_info, override_progress=None):
         """Create status images for Stream Deck display."""
@@ -295,19 +296,23 @@ class SpotifyTrackInfo:
             current_track = self.sp.current_user_playing_track()
 
             if current_track is not None and current_track["item"] is not None:
+                # Update playing state
+                self.is_playing = current_track["is_playing"]
                 track_data = {
                     "track_name": current_track["item"]["name"],
                     "image_url": current_track["item"]["album"]["images"][0]["url"],
                     "artists": ", ".join(
                         [artist["name"] for artist in current_track["item"]["artists"]]
                     ),
-                    "is_playing": current_track["is_playing"],
+                    "is_playing": self.is_playing,
                     "progress_ms": current_track["progress_ms"],
                     "duration_ms": current_track["item"]["duration_ms"],
                     "track_id": current_track["item"]["id"],
                 }
                 return track_data
 
+            # Reset playing state when no track
+            self.is_playing = False
             return {"error": "No track currently playing"}
 
         except (
@@ -316,6 +321,7 @@ class SpotifyTrackInfo:
             KeyError,
             IndexError,
         ) as e:
+            self.is_playing = False
             return {"error": f"Error occurred: {str(e)}"}
 
     def list_devices(self):
@@ -346,46 +352,50 @@ spotify_info = SpotifyTrackInfo()
 def handle_left_action():
     """Handle left button actions (play/pause)."""
     try:
-        response = _process_left_action(request.get_json())
-        return jsonify(response[0]), response[1]
-    except (spotipy.SpotifyException, requests.RequestException, ValueError) as e:
+        data = request.get_json()
+        if not data or "action" not in data:
+            return jsonify({"status": "error", "message": "Invalid action data"}), 400
+
+        if data["action"] not in ("tap", "dialDown"):
+            return jsonify({"status": "error", "message": "No active playback"}), 400
+
+        current_playback = spotify_info.sp.current_playback()
+        current_playing_state = current_playback and current_playback.get("is_playing")
+
+        # Update UI immediately
+        if spotify_info.last_track_info:
+            spotify_info.last_track_info["is_playing"] = not current_playing_state
+            spotify_info.create_status_images(spotify_info.last_track_info)
+        spotify_info.is_playing = not current_playing_state
+        # Send immediate response
+        response = {"status": "success", "message": "Playback toggled"}
+        threading.Thread(
+            target=_async_playback_toggle, args=(current_playing_state,), daemon=True
+        ).start()
+
+        return jsonify(response), 200
+
+    except (ValueError, TypeError) as e:
         print(f"Error handling left action: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except spotipy.SpotifyException as e:
+        print(f"Spotify API error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-def _process_left_action(data):
-    """Process left button action data."""
-    if not data or "action" not in data:
-        return {"status": "error", "message": "Invalid action data"}, 400
-
-    if data["action"] not in ("tap", "dialDown"):
-        return {"status": "error", "message": "No active playback"}, 400
-
-    current_playback = spotify_info.sp.current_playback()
-
-    if current_playback and current_playback.get("is_playing"):
-        return _handle_pause_playback()
-
-    return _handle_start_playback()
-
-
-def _handle_pause_playback():
-    """Handle pausing playback."""
+def _async_playback_toggle(current_playing_state):
+    """Handle the actual API call asynchronously."""
     try:
-        spotify_info.sp.pause_playback()
-        return {"status": "success", "message": "Playback paused"}, 200
-    except (spotipy.SpotifyException, requests.RequestException) as e:
-        print(f"Error pausing: {str(e)}")
-        return {"status": "error", "message": str(e)}, 500
-
-
-def _handle_start_playback():
-    """Handle starting playback."""
-    try:
-        spotify_info.sp.start_playback()
-        return {"status": "success", "message": "Playback started"}, 200
-    except (spotipy.SpotifyException, requests.RequestException) as e:
-        return _handle_forced_playback(e)
+        if current_playing_state:
+            spotify_info.sp.pause_playback()
+        else:
+            try:
+                spotify_info.sp.start_playback()
+            except spotipy.SpotifyException:
+                # Try forced playback if simple play fails
+                _handle_forced_playback(None)
+    except spotipy.SpotifyException as e:
+        print(f"Error in async playback toggle: {str(e)}")
 
 
 @app.route("/right", methods=["POST"])
@@ -586,6 +596,7 @@ if __name__ == "__main__":
             spotify_info.image_handler.current_track_start_time
             and spotify_info.image_handler.current_track_duration
             and spotify_info.last_track_info
+            and spotify_info.is_playing
         ):
             elapsed_time = (
                 current_time - spotify_info.image_handler.current_track_start_time
