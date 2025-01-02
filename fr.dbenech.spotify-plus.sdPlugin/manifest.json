@@ -1,0 +1,48 @@
+{
+	"Name": "Spotify Plus",
+	"Version": "0.1.0.0",
+	"Author": "dbenech",
+	"Actions": [
+		{
+			"Icon": "action-icon",
+			"UUID": "fr.dbenech.spotify-plus.spotify-player",
+			"Name": "Spotify Player",
+			"Controllers": [
+				"Encoder"
+			],
+			"Encoder": {
+				"layout": "layout.json"
+			},
+			"States": [
+				{
+					"Image": "state-image"
+				}
+			],
+			"PropertyInspectorPath": "inspector/inspector.html"
+		}
+	],
+	"Category": "Spotify Plus",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Spotify improved on stream deck +, to display info on the touch screen",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.4"
+	},
+	"OS": [
+		{
+			"Platform": "mac",
+			"MinimumVersion": "10.15"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	},
+	"UUID": "fr.dbenech.spotify-plus"
+}
