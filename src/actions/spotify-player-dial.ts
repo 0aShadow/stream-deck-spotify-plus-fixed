@@ -4,10 +4,20 @@ import http from 'http';
 
 @action({ UUID: "fr.dbenech.spotify-plus.spotify-player" })
 export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
-    private refreshIntervals: Set<NodeJS.Timeout> = new Set();
+    private refreshIntervals: Map<string, NodeJS.Timeout> = new Map();
+
+    private clearInterval(url: string): void {
+        const interval = this.refreshIntervals.get(url);
+        if (interval) {
+            streamDeck.logger.info("Clearing interval for " + url);
+            clearInterval(interval);
+            this.refreshIntervals.delete(url);
+        }
+    }
 
     private clearAllIntervals(): void {
-        this.refreshIntervals.forEach(interval => {
+        this.refreshIntervals.forEach((interval) => {
+            streamDeck.logger.info("Clearing interval for " + interval);
             clearInterval(interval);
         });
         this.refreshIntervals.clear();
@@ -70,17 +80,19 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
 
     override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<SpotifySettings>): Promise<void> {
         if (ev.action.isDial()) {
-            // Clear all existing intervals
-            this.clearAllIntervals();
+            const url = ev.payload.settings.imgUrl;
+            const refreshRate = ev.payload.settings.refreshRate || 5;
 
-            // Set up new interval with updated settings
-            let refreshRate = ev.payload.settings.refreshRate || 5;
+            // Supprimer l'ancien interval pour cette URL s'il existe
+            this.clearInterval(url);
+
+            // Créer un nouvel interval
             const interval = setInterval(() => {
-                this.updateImage(ev.action, ev.payload.settings.imgUrl);
+                this.updateImage(ev.action, url);
             }, refreshRate * 1000);
 
-            this.refreshIntervals.add(interval);
-            await this.updateImage(ev.action, ev.payload.settings.imgUrl);
+            this.refreshIntervals.set(url, interval);
+            await this.updateImage(ev.action, url);
         }
     }
 
@@ -97,24 +109,28 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
     }
 
     override async onWillAppear(ev: WillAppearEvent<SpotifySettings>): Promise<void> {
-        streamDeck.logger.info("onWillAppear");
-        let url = ev.payload.settings.imgUrl;
-        let refreshRate = ev.payload.settings.refreshRate || 5;
+        const url = String(ev.payload.settings.imgUrl || '');
+        const refreshRate = ev.payload.settings.refreshRate || 5;
 
         if (ev.action.isDial()) {
             ev.action.setFeedbackLayout("layout.json");
             await this.updateImage(ev.action, url);
 
-            const interval = setInterval(() => {
-                this.updateImage(ev.action, url);
-            }, refreshRate * 1000);
+            // Vérifier si un interval existe déjà pour cette URL
+            if (!this.refreshIntervals.has(url)) {
+                streamDeck.logger.info("Setting interval for " + url);
+                const interval = setInterval(() => {
+                    this.updateImage(ev.action, url);
+                }, refreshRate * 1000);
 
-            this.refreshIntervals.add(interval);
+                this.refreshIntervals.set(url, interval);
+            }
         }
     }
 
     override onWillDisappear(ev: WillDisappearEvent): void {
-        this.clearAllIntervals();
+        const url = String(ev.payload.settings.imgUrl || '');
+        this.clearInterval(url);
     }
 
     private async sendAction(actionType: string, url: string, value?: number): Promise<void> {
