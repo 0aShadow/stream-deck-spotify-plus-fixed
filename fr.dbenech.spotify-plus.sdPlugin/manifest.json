@@ -4,7 +4,7 @@
 	"Author": "dbenech",
 	"Actions": [
 		{
-			"Icon": "action-icon",
+			"Icon": "imgs/spotify-player/list",
 			"UUID": "fr.dbenech.spotify-plus.spotify-player",
 			"Name": "Spotify Player",
 			"Controllers": [
@@ -15,7 +15,7 @@
 			},
 			"States": [
 				{
-					"Image": "state-image"
+					"Image": "imgs/spotify-player/dial"
 				}
 			],
 			"PropertyInspectorPath": "inspector/inspector.html"
