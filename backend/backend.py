@@ -23,8 +23,16 @@ DISABLE_FLASK_LOGS = True
 REFRESH_RATE_TRACK_END = 15
 REFRESH_RATE_PLAYING = 15
 REFRESH_RATE_PAUSED = 60
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("spotipy")
+logger.setLevel(logging.DEBUG)
+# Disable PIL debug logging
+pil_logger = logging.getLogger("PIL")
+pil_logger.setLevel(logging.INFO)
+
 
 app = Flask(__name__)
+
 
 # Disable Flask access logs if DISABLE_FLASK_LOGS is True
 if DISABLE_FLASK_LOGS:
@@ -47,6 +55,9 @@ class SpotifyImageHandler:
         self.current_track_start_time = None
         self.current_track_duration = None
         self.spotify_client = spotify_client
+        # Add image cache
+        self.album_art_cache = {}
+        self.current_image_url = None
 
     def create_progress_bar(self, draw, current_progress):
         """Draw progress bar on the image."""
@@ -106,10 +117,21 @@ class SpotifyImageHandler:
             self.right_image.seek(0)
 
     def _add_album_art(self, background, track_data):
-        """Add album art to the background image."""
-        response = requests.get(track_data["image_url"], timeout=10)
-        album_art = Image.open(BytesIO(response.content))
-        album_art = album_art.resize((100, 100))
+        """Add album art to the background image with caching."""
+        image_url = track_data["image_url"]
+
+        # Use cached image if URL hasn't changed
+        if image_url == self.current_image_url and image_url in self.album_art_cache:
+            album_art = self.album_art_cache[image_url]
+        else:
+            # Download and cache new image
+            response = requests.get(image_url, timeout=10)
+            album_art = Image.open(BytesIO(response.content))
+            album_art = album_art.resize((100, 100))
+            # Update cache
+            self.album_art_cache = {image_url: album_art}  # Only keep latest image
+            self.current_image_url = image_url
+
         background.paste(album_art, (0, 0))
 
         if not track_data.get("is_playing", True):
@@ -174,14 +196,35 @@ class SpotifyImageHandler:
         return None
 
 
+class TrackState:
+    """Class to hold track-related state."""
+
+    def __init__(self):
+        self.current_id = None
+        self.current_liked = False
+        self.last_info = None
+        self.is_playing = False
+
+
+class VolumeState:
+    """Class to hold volume-related state."""
+
+    def __init__(self):
+        self.last_update = 0
+        self.current = None
+        self.last_rotate_time = 0
+        self.update_delay = 0.1
+        self.refresh_delay = 10.0
+
+
 class SpotifyTrackInfo:
     """Handles Spotify track information and control."""
 
     def __init__(self):
         # Configure retry strategy
         retry_strategy = Retry(
-            total=0,  # Disable automatic retries
-            status_forcelist=[],  # Empty list to disable retries
+            total=0,
+            status_forcelist=[],
         )
 
         session = requests.Session()
@@ -203,26 +246,8 @@ class SpotifyTrackInfo:
             requests_timeout=10,
         )
         self.image_handler = SpotifyImageHandler(self.sp)
-        self.last_track_info = None
-        self.is_playing = False
-        self.last_volume_update = 0
-        self.last_rotate_time = 0
-        self.volume_update_delay = 0.1  # 100ms minimum between volume updates
-        self.volume_refresh_delay = 10.0  # 10s before refreshing volume from API
-        self.pending_volume_change = 0  # Pour accumuler les changements de volume
-        self.current_volume = None  # Pour tracker le volume localement
-        # Initialize track change attributes
-        self.last_track_change_time = 0
-        self.last_track_change_direction = None
-
-        # Initialize empty images right away
-        self.image_handler.left_image = BytesIO()
-        self.image_handler.right_image = BytesIO()
-        self.image_handler.full_image = BytesIO()
-
-        # Create a default black image
-        default_img = Image.new("RGB", (400, 100), "black")
-        self.image_handler.save_images(default_img)
+        self.track = TrackState()
+        self.volume = VolumeState()
 
     def _format_retry_time(self, seconds):
         """Format seconds into readable time format (e.g., 2h 30m 15s)."""
@@ -262,21 +287,24 @@ class SpotifyTrackInfo:
             background = Image.new("RGB", (400, 100), "black")
             draw = ImageDraw.Draw(background)
 
-            # Add album art
-            self._add_album_art(background, current_track_info)
-
-            # Add track info
+            # Add album art and track info
+            self.image_handler._add_album_art(background, current_track_info)
             self._add_track_info(draw, current_track_info)
 
             # Add progress bar
             current_progress = self._get_progress(override_progress)
             self.image_handler.create_progress_bar(draw, current_progress)
 
-            # Add heart icon
-            is_liked = self.sp.current_user_saved_tracks_contains(
-                [current_track_info["track_id"]]
-            )[0]
-            self.image_handler.add_heart_icon(background, is_liked)
+            # Check if track changed and update liked status if needed
+            track_id = current_track_info["track_id"]
+            if track_id != self.track.current_id:
+                self.track.current_id = track_id
+                self.track.current_liked = self.sp.current_user_saved_tracks_contains(
+                    [track_id]
+                )[0]
+
+            # Add heart icon with cached liked status
+            self.image_handler.add_heart_icon(background, self.track.current_liked)
 
             # Save images
             self.image_handler.save_images(background)
@@ -285,35 +313,6 @@ class SpotifyTrackInfo:
         except (requests.RequestException, IOError, ValueError) as e:
             print(f"Error creating images: {str(e)}")
             return False
-
-    def _add_album_art(self, background, track_data):
-        """Add album art to the background image."""
-        response = requests.get(track_data["image_url"], timeout=10)
-        album_art = Image.open(BytesIO(response.content))
-        album_art = album_art.resize((100, 100))
-        background.paste(album_art, (0, 0))
-
-        if not track_data.get("is_playing", True):
-            self._add_pause_overlay(background)
-
-    def _add_pause_overlay(self, background):
-        """Add pause overlay to album art."""
-        overlay = Image.new("RGBA", (100, 100), (0, 0, 0, 128))
-        draw_overlay = ImageDraw.Draw(overlay)
-
-        bar_width = 10
-        bar_height = 30
-        spacing = 10
-        start_x = (100 - (2 * bar_width + spacing)) // 2
-        start_y = (100 - bar_height) // 2
-
-        for x in (start_x, start_x + bar_width + spacing):
-            draw_overlay.rectangle(
-                [x, start_y, x + bar_width, start_y + bar_height],
-                fill="white",
-            )
-
-        background.paste(overlay, (0, 0), overlay)
 
     def _add_track_info(self, draw, track_data):
         """Add track name and artist information."""
@@ -363,14 +362,14 @@ class SpotifyTrackInfo:
 
             if current_track is not None and current_track["item"] is not None:
                 # Update playing state
-                self.is_playing = current_track["is_playing"]
+                self.track.is_playing = current_track["is_playing"]
                 track_data = {
                     "track_name": current_track["item"]["name"],
                     "image_url": current_track["item"]["album"]["images"][0]["url"],
                     "artists": ", ".join(
                         [artist["name"] for artist in current_track["item"]["artists"]]
                     ),
-                    "is_playing": self.is_playing,
+                    "is_playing": self.track.is_playing,
                     "progress_ms": current_track["progress_ms"],
                     "duration_ms": current_track["item"]["duration_ms"],
                     "track_id": current_track["item"]["id"],
@@ -378,7 +377,7 @@ class SpotifyTrackInfo:
                 return track_data
 
             # Reset playing state when no track
-            self.is_playing = False
+            self.track.is_playing = False
             return {"error": "No track currently playing"}
 
         except (
@@ -387,7 +386,7 @@ class SpotifyTrackInfo:
             KeyError,
             IndexError,
         ) as e:
-            self.is_playing = False
+            self.track.is_playing = False
             if e.http_status == 429:  # Too Many Requests
                 retry_after = int(e.headers.get("Retry-After", 1))
                 formatted_time = self._format_retry_time(retry_after)
@@ -415,6 +414,34 @@ class SpotifyTrackInfo:
             print(f"Error getting devices: {str(e)}")
             return []
 
+    def _handle_like_toggle(self):
+        """Handle toggling track like status."""
+        current_track_info = self.track.last_info
+        if not current_track_info or "track_id" not in current_track_info:
+            return {"status": "error", "message": "No track currently playing"}, 400
+
+        try:
+            if self.track.current_liked:
+                self.sp.current_user_saved_tracks_delete([self.track.current_id])
+            else:
+                self.sp.current_user_saved_tracks_add([self.track.current_id])
+
+            # Update cached status
+            self.track.current_liked = not self.track.current_liked
+
+            # Immédiatement recréer les images avec le nouveau statut
+            self.create_status_images(current_track_info)
+
+            return {
+                "status": "success",
+                "message": "Unliked track"
+                if not self.track.current_liked
+                else "Liked track",
+            }, 200
+        except (spotipy.SpotifyException, requests.RequestException) as e:
+            print(f"Error toggling like status: {str(e)}")
+            return {"status": "error", "message": str(e)}, 500
+
 
 # Create SpotifyTrackInfo instance before Flask routes
 spotify_info = SpotifyTrackInfo()
@@ -441,10 +468,10 @@ def handle_left_action():
         current_playing_state = current_playback and current_playback.get("is_playing")
 
         # Update UI immediately
-        if spotify_info.last_track_info:
-            spotify_info.last_track_info["is_playing"] = not current_playing_state
-            spotify_info.create_status_images(spotify_info.last_track_info)
-        spotify_info.is_playing = not current_playing_state
+        if spotify_info.track.last_info:
+            spotify_info.track.last_info["is_playing"] = not current_playing_state
+            spotify_info.create_status_images(spotify_info.track.last_info)
+        spotify_info.track.is_playing = not current_playing_state
         # Send immediate response
         response = {"status": "success", "message": "Playback toggled"}
         threading.Thread(
@@ -497,7 +524,7 @@ def _process_right_action(data):
     action = data["action"]
 
     if action in ("tap", "dialDown"):
-        return _handle_like_toggle()
+        return spotify_info._handle_like_toggle()
 
     if action == "rotate":
         try:
@@ -506,34 +533,37 @@ def _process_right_action(data):
             value = data.get("value", 0) * 3
 
             # Refresh volume from API if too much time has passed since last rotation
-            if now - spotify_info.last_rotate_time > spotify_info.volume_refresh_delay:
+            if (
+                now - spotify_info.volume.last_rotate_time
+                > spotify_info.volume.refresh_delay
+            ):
                 current_playback = spotify_info.sp.current_playback()
                 if not current_playback:
                     return {"status": "error", "message": "No active playback"}, 400
-                spotify_info.current_volume = current_playback["device"][
+                spotify_info.volume.current = current_playback["device"][
                     "volume_percent"
                 ]
             # Initialize current_volume if not set
-            elif spotify_info.current_volume is None:
+            elif spotify_info.volume.current is None:
                 current_playback = spotify_info.sp.current_playback()
                 if not current_playback:
                     return {"status": "error", "message": "No active playback"}, 400
-                spotify_info.current_volume = current_playback["device"][
+                spotify_info.volume.current = current_playback["device"][
                     "volume_percent"
                 ]
 
             # Calculate new volume
-            new_volume = max(0, min(100, spotify_info.current_volume + value))
-            spotify_info.current_volume = new_volume
-            spotify_info.last_rotate_time = now
+            new_volume = max(0, min(100, spotify_info.volume.current + value))
+            spotify_info.volume.current = new_volume
+            spotify_info.volume.last_rotate_time = now
 
             # Only make API call if enough time has passed
             if (
-                now - spotify_info.last_volume_update
-                >= spotify_info.volume_update_delay
+                now - spotify_info.volume.last_update
+                >= spotify_info.volume.update_delay
             ):
                 spotify_info.sp.volume(new_volume)
-                spotify_info.last_volume_update = now
+                spotify_info.volume.last_update = now
 
             return {"status": "success", "message": f"Volume set to {new_volume}%"}, 200
 
@@ -542,27 +572,6 @@ def _process_right_action(data):
             return {"status": "error", "message": str(e)}, 500
 
     return {"status": "error", "message": "Invalid action"}, 400
-
-
-def _handle_like_toggle():
-    """Handle toggling track like status."""
-    current_track_info = spotify_info.last_track_info
-    if not current_track_info or "track_id" not in current_track_info:
-        return {"status": "error", "message": "No track currently playing"}, 400
-
-    track_id = current_track_info["track_id"]
-    is_liked = spotify_info.sp.current_user_saved_tracks_contains([track_id])[0]
-
-    if is_liked:
-        spotify_info.sp.current_user_saved_tracks_delete([track_id])
-    else:
-        spotify_info.sp.current_user_saved_tracks_add([track_id])
-
-    spotify_info.create_status_images(current_track_info)
-    return {
-        "status": "success",
-        "message": "Unliked track" if is_liked else "Liked track",
-    }, 200
 
 
 @app.route("/left", methods=["GET"])
@@ -647,17 +656,17 @@ def _handle_track_change(data):
         value = data.get("value", 0)
 
         # If less than 500ms has passed since last action, ignore
-        if now - spotify_info.last_track_change_time < 0.5:
+        if now - spotify_info.track.last_track_change_time < 0.5:
             return {"status": "ignored", "message": "Action ignored (too soon)"}, 200
 
         # If direction changed or more than 2 seconds passed, allow action
         if (
-            spotify_info.last_track_change_direction is None
-            or now - spotify_info.last_track_change_time > 2.0
-            or (value > 0) != (spotify_info.last_track_change_direction > 0)
+            spotify_info.track.last_track_change_direction is None
+            or now - spotify_info.track.last_track_change_time > 2.0
+            or (value > 0) != (spotify_info.track.last_track_change_direction > 0)
         ):
-            spotify_info.last_track_change_time = now
-            spotify_info.last_track_change_direction = value
+            spotify_info.track.last_track_change_time = now
+            spotify_info.track.last_track_change_direction = value
 
             if value > 0:
                 spotify_info.sp.next_track()
@@ -675,7 +684,7 @@ def _handle_track_change(data):
             track_info = spotify_info.get_current_track_info()
             if "error" not in track_info:
                 print(f"Updated to: {track_info['track_name']}")
-                spotify_info.last_track_info = track_info
+                spotify_info.track.last_info = track_info
                 spotify_info.create_status_images(track_info)
 
             return {"status": "success", "message": message}, 200
@@ -710,15 +719,15 @@ if __name__ == "__main__":
             LAST_API_CALL = current_time
             if "error" not in track_info:
                 print(f"\nTrack ended, refreshing: {track_info['track_name']}")
-                spotify_info.last_track_info = track_info
+                spotify_info.track.last_info = track_info
                 spotify_info.create_status_images(track_info)
             continue
 
         # Determine refresh rate based on playback state
-        if spotify_info.last_track_info and "error" not in spotify_info.last_track_info:
-            progress_ms = spotify_info.last_track_info.get("progress_ms", 0)
-            duration_ms = spotify_info.last_track_info.get("duration_ms", 0)
-            is_playing = spotify_info.last_track_info.get("is_playing", False)
+        if spotify_info.track.last_info and "error" not in spotify_info.track.last_info:
+            progress_ms = spotify_info.track.last_info.get("progress_ms", 0)
+            duration_ms = spotify_info.track.last_info.get("duration_ms", 0)
+            is_playing = spotify_info.track.is_playing
 
             # Near end of track (last 10 seconds)
             if is_playing and duration_ms - progress_ms <= 10000:
@@ -735,24 +744,24 @@ if __name__ == "__main__":
 
         # API call based on refresh rate
         if current_time - LAST_API_CALL >= CURRENT_REFRESH_RATE or IS_FIRST_RUN:
-            track_info = spotify_info.get_current_track_info()
+            current_track_info = spotify_info.get_current_track_info()
             LAST_API_CALL = current_time
 
-            if "error" not in track_info:
-                print(f"\nCurrent track: {track_info['track_name']}")
-                print(f"Artists: {track_info['artists']}")
-                print(f"Album art URL: {track_info['image_url']}")
-                spotify_info.last_track_info = track_info
-                spotify_info.create_status_images(track_info)
+            if "error" not in current_track_info:
+                print(f"\nCurrent track: {current_track_info['track_name']}")
+                print(f"Artists: {current_track_info['artists']}")
+                print(f"Album art URL: {current_track_info['image_url']}")
+                spotify_info.track.last_info = current_track_info
+                spotify_info.create_status_images(current_track_info)
             else:
-                print(f"\n{track_info['error']}")
+                print(f"\n{current_track_info['error']}")
 
         # Update progress bar every second if we have track timing information
         elif (
             spotify_info.image_handler.current_track_start_time
             and spotify_info.image_handler.current_track_duration
-            and spotify_info.last_track_info
-            and spotify_info.is_playing
+            and spotify_info.track.last_info
+            and spotify_info.track.is_playing
         ):
             elapsed_time = (
                 current_time - spotify_info.image_handler.current_track_start_time
@@ -761,7 +770,7 @@ if __name__ == "__main__":
                 elapsed_time / spotify_info.image_handler.current_track_duration, 1.0
             )
             spotify_info.create_status_images(
-                spotify_info.last_track_info, override_progress=progress_ratio
+                spotify_info.track.last_info, override_progress=progress_ratio
             )
 
         if IS_FIRST_RUN:

@@ -61,6 +61,6 @@ streamDeck.logger.setLevel(LogLevel.INFO);
 streamDeck.actions.registerAction(new SpotifyPlayerDial());
 
 // Start initial Python backend
-startPythonBackend();
+// startPythonBackend();
 
 streamDeck.connect();
