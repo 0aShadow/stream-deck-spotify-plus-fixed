@@ -703,65 +703,54 @@ if __name__ == "__main__":
 
     IS_FIRST_RUN = True
     LAST_API_CALL = 0
+    CURRENT_REFRESH_RATE = (
+        REFRESH_RATE_PLAYING  # Ajout d'une variable pour le taux de rafraîchissement
+    )
 
     while True:
         current_time = time.time()
 
-        # Check if track has ended
+        # Ne vérifier la fin de piste que si on a des informations de timing valides
         if (
-            spotify_info.image_handler.current_track_start_time
-            and spotify_info.image_handler.current_track_duration
-            and current_time - spotify_info.image_handler.current_track_start_time
-            >= spotify_info.image_handler.current_track_duration
+            spotify_info.track.is_playing
+            and spotify_info.image_handler.current_track_start_time
         ):
-            # Force refresh when track ends
-            track_info = spotify_info.get_current_track_info()
-            LAST_API_CALL = current_time
-            if "error" not in track_info:
-                print(f"\nTrack ended, refreshing: {track_info['track_name']}")
-                spotify_info.track.last_info = track_info
-                spotify_info.create_status_images(track_info)
-            continue
+            if (
+                spotify_info.image_handler.current_track_start_time
+                and spotify_info.image_handler.current_track_duration
+                and current_time - spotify_info.image_handler.current_track_start_time
+                >= spotify_info.image_handler.current_track_duration
+            ):
+                track_info = spotify_info.get_current_track_info()
+                LAST_API_CALL = current_time
+                if "error" not in track_info:
+                    spotify_info.track.last_info = track_info
+                    spotify_info.create_status_images(track_info)
+                continue
 
-        # Determine refresh rate based on playback state
-        if spotify_info.track.last_info and "error" not in spotify_info.track.last_info:
-            progress_ms = spotify_info.track.last_info.get("progress_ms", 0)
-            duration_ms = spotify_info.track.last_info.get("duration_ms", 0)
-            is_playing = spotify_info.track.is_playing
-
-            # Near end of track (last 10 seconds)
-            if is_playing and duration_ms - progress_ms <= 10000:
-                CURRENT_REFRESH_RATE = REFRESH_RATE_TRACK_END
-            # Normal playback
-            elif is_playing:
-                CURRENT_REFRESH_RATE = REFRESH_RATE_PLAYING
-            # Paused or not playing
-            else:
-                CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
-        else:
-            # Default refresh rate when no track info
-            CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
-
-        # API call based on refresh rate
+        # Ne faire l'appel API que si le délai de rafraîchissement est écoulé
         if current_time - LAST_API_CALL >= CURRENT_REFRESH_RATE or IS_FIRST_RUN:
             current_track_info = spotify_info.get_current_track_info()
             LAST_API_CALL = current_time
 
             if "error" not in current_track_info:
-                print(f"\nCurrent track: {current_track_info['track_name']}")
-                print(f"Artists: {current_track_info['artists']}")
-                print(f"Album art URL: {current_track_info['image_url']}")
                 spotify_info.track.last_info = current_track_info
                 spotify_info.create_status_images(current_track_info)
+                CURRENT_REFRESH_RATE = (
+                    REFRESH_RATE_PLAYING
+                    if spotify_info.track.is_playing
+                    else REFRESH_RATE_PAUSED
+                )
             else:
                 print(f"\n{current_track_info['error']}")
+                CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED  # Utiliser un délai plus long quand il n'y a pas de lecture
 
-        # Update progress bar every second if we have track timing information
+        # Mettre à jour la barre de progression seulement si une lecture est en cours
         elif (
-            spotify_info.image_handler.current_track_start_time
+            spotify_info.track.is_playing
+            and spotify_info.image_handler.current_track_start_time
             and spotify_info.image_handler.current_track_duration
             and spotify_info.track.last_info
-            and spotify_info.track.is_playing
         ):
             elapsed_time = (
                 current_time - spotify_info.image_handler.current_track_start_time
@@ -779,4 +768,5 @@ if __name__ == "__main__":
             print(f"http://localhost:{PORT}/left")
             print(f"http://localhost:{PORT}/right")
             IS_FIRST_RUN = False
-        time.sleep(1)
+
+        time.sleep(1)  # Toujours attendre 1 seconde entre les itérations
