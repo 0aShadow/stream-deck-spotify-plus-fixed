@@ -63,11 +63,14 @@ class SpotifyImageHandler:
         heart_color = "#1DB954" if is_liked else "#404040"
 
         # Load and colorize SVG
-        with open("scripts/spotify-like.svg", "r", encoding="utf-8") as file:
+        with open(
+            os.path.join(os.path.dirname(__file__), "spotify-like.svg"),
+            "r",
+            encoding="utf-8",
+        ) as file:
             svg_content = file.read().replace(
                 "path d=", f'path fill="{heart_color}" d='
             )
-
         # Convert SVG to PNG
         png_data = cairosvg.svg2png(
             bytestring=svg_content.encode("utf-8"),
@@ -706,5 +709,5 @@ if __name__ == "__main__":
             print(f"http://localhost:{PORT}/left")
             print(f"http://localhost:{PORT}/right")
             IS_FIRST_RUN = False
-
+        print("Hello")
         time.sleep(1)
