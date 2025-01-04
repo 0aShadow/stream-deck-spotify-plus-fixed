@@ -1,6 +1,7 @@
 import streamDeck, { action, DialUpEvent, SingletonAction, WillAppearEvent, JsonObject, DialDownEvent, DialRotateEvent, DidReceiveSettingsEvent, WillDisappearEvent, KeyDownEvent, KeyUpEvent, TouchTapEvent } from "@elgato/streamdeck";
 import https from 'https';
 import http from 'http';
+import { SpotifySettings } from '../types';
 
 @action({ UUID: "fr.dbenech.spotify-plus.spotify-player" })
 export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
@@ -80,8 +81,12 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
 
     override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<SpotifySettings>): Promise<void> {
         if (ev.action.isDial()) {
-            const url = ev.payload.settings.imgUrl;
-            const refreshRate = ev.payload.settings.refreshRate || 5;
+            let str = ev.payload.settings;
+            streamDeck.logger.info("Settings set: " + JSON.stringify(str));
+            streamDeck.settings.setGlobalSettings(str.global);
+
+            const url = ev.payload.settings.imgUrl || '';
+            const refreshRate = ev.payload.settings.global.refreshRate || 5;
 
             // Supprimer l'ancien interval pour cette URL s'il existe
             this.clearInterval(url);
@@ -99,7 +104,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
     private async updateImage(action: any, url: string) {
         try {
             const base64Image = await this.downloadImage(url);
-            streamDeck.logger.info("Updating image: " + url);
+            streamDeck.logger.debug("Updating image: " + url);
             return action.setFeedback({
                 "image": base64Image,
             });
@@ -110,7 +115,8 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
 
     override async onWillAppear(ev: WillAppearEvent<SpotifySettings>): Promise<void> {
         const url = String(ev.payload.settings.imgUrl || '');
-        const refreshRate = ev.payload.settings.refreshRate || 5;
+
+        const refreshRate = ev.payload.settings.global.refreshRate || 5;
 
         if (ev.action.isDial()) {
             ev.action.setFeedbackLayout("layout.json");
@@ -176,7 +182,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
 
     override onTouchTap(ev: TouchTapEvent<SpotifySettings>): void {
         streamDeck.logger.info("onTouchTap triggered");
-        const url = ev.payload.settings.imgUrl;
+        const url = ev.payload.settings.imgUrl || '';
         this.sendAction('tap', url)
             .then(() => this.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onTouchTap: ${error}`));
@@ -184,7 +190,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
 
     override onDialDown(ev: DialDownEvent<SpotifySettings>): void {
         streamDeck.logger.info("onDialDown triggered");
-        const url = ev.payload.settings.imgUrl;
+        const url = ev.payload.settings.imgUrl || '';
         this.sendAction('dialDown', url)
             .then(() => this.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialDown: ${error}`));
@@ -192,7 +198,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
 
     override onDialUp(ev: DialUpEvent<SpotifySettings>): void {
         streamDeck.logger.info("onDialUp triggered");
-        const url = ev.payload.settings.imgUrl;
+        const url = ev.payload.settings.imgUrl || '';
         this.sendAction('dialUp', url)
             .then(() => this.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialUp: ${error}`));
@@ -200,14 +206,9 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
 
     override onDialRotate(ev: DialRotateEvent<SpotifySettings>): void {
         streamDeck.logger.info(`onDialRotate triggered with ticks: ${ev.payload.ticks}`);
-        const url = ev.payload.settings.imgUrl;
+        const url = ev.payload.settings.imgUrl || '';
         this.sendAction('rotate', url, ev.payload.ticks)
             .then(() => this.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialRotate: ${error}`));
     }
-}
-
-type SpotifySettings = {
-    imgUrl: string;
-    refreshRate: number;
 }

@@ -5,16 +5,80 @@
     <title>Spotify Settings</title>
     <meta charset="utf-8" />
     <script src="https://sdpi-components.dev/releases/v3/sdpi-components.js"></script>
+    <style>
+        .settings-title {
+            color: rgb(204, 204, 204);
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            padding: 8px 0;
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+    </style>
 </head>
 
 <body>
-    <sdpi-item label="Image URL">
-        <sdpi-textfield setting="imgUrl" placeholder="Enter image URL">
+    <!-- Instance Settings -->
+    <sdpi-item label="Dial Position">
+        <sdpi-select setting="imgUrl">
+            <option value="http://localhost:8491/left">Left</option>
+            <option value="http://localhost:8491/right">Right</option>
+        </sdpi-select>
+    </sdpi-item>
+
+    <!-- Separator -->
+    <sdpi-item type="separator"></sdpi-item>
+
+    <hr>
+
+    <!-- Global Settings Title -->
+    <h3 class="settings-title">Spotify Player Global Settings</h3>
+
+    <!-- Global Settings -->
+    <sdpi-item label="Refresh Rate (seconds)">
+        <sdpi-range setting="global.refreshRate" min="1" max="30" step="1" default="5" showlabels></sdpi-range>
+    </sdpi-item>
+    <sdpi-item label="Client ID">
+        <sdpi-textfield setting="global.clientId" placeholder="Enter Spotify Client ID">
         </sdpi-textfield>
     </sdpi-item>
-    <sdpi-item label="Refresh Rate (seconds)">
-        <sdpi-range setting="refreshRate" min="1" max="30" step="1" default="5" showlabels></sdpi-range>
+    <sdpi-item label="Client Secret">
+        <sdpi-password setting="global.clientSecret" placeholder="Enter Spotify Client Secret" type="password">
+        </sdpi-password>
     </sdpi-item>
+    <sdpi-item>
+        <sdpi-button id="saveGlobalSettings" class="sdpi-item-value">Save Global Settings</sdpi-button>
+    </sdpi-item>
+
+
 </body>
+
+<script>
+
+    const { streamDeckClient } = SDPIComponents;
+
+    // Load global settings when page loads
+    window.addEventListener('load', async () => {
+        try {
+            const globalSettings = await streamDeckClient.getGlobalSettings();
+            console.log("globalSettings", globalSettings);
+
+            if (globalSettings) {
+                // Find all elements with setting attribute starting with "global."
+                document.querySelectorAll('[setting^="global."]').forEach(element => {
+                    const settingKey = element.getAttribute('setting').replace('global.', '');
+                    const value = globalSettings[settingKey];
+                    if (value !== undefined) {
+                        element.value = value;
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error loading global settings:', error);
+        }
+    });
+
+</script>
 
 </html>

@@ -14,13 +14,15 @@ from PIL import Image, ImageDraw, ImageFont
 import requests
 from flask import Flask, send_file, request, jsonify
 import cairosvg
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Constants
 PORT = 8491
 DISABLE_FLASK_LOGS = True
-REFRESH_RATE_TRACK_END = 5
-REFRESH_RATE_PLAYING = 10
-REFRESH_RATE_PAUSED = 30
+REFRESH_RATE_TRACK_END = 15
+REFRESH_RATE_PLAYING = 15
+REFRESH_RATE_PAUSED = 60
 
 app = Flask(__name__)
 
@@ -176,6 +178,16 @@ class SpotifyTrackInfo:
     """Handles Spotify track information and control."""
 
     def __init__(self):
+        # Configure retry strategy
+        retry_strategy = Retry(
+            total=0,  # Disable automatic retries
+            status_forcelist=[],  # Empty list to disable retries
+        )
+
+        session = requests.Session()
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+
         scope = (
             "user-read-currently-playing user-read-playback-state "
             "user-library-read user-library-modify user-modify-playback-state"
@@ -186,7 +198,9 @@ class SpotifyTrackInfo:
                 client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
                 redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
                 scope=scope,
-            )
+            ),
+            requests_session=session,
+            requests_timeout=10,
         )
         self.image_handler = SpotifyImageHandler(self.sp)
         self.last_track_info = None
@@ -200,6 +214,46 @@ class SpotifyTrackInfo:
         # Initialize track change attributes
         self.last_track_change_time = 0
         self.last_track_change_direction = None
+
+        # Initialize empty images right away
+        self.image_handler.left_image = BytesIO()
+        self.image_handler.right_image = BytesIO()
+        self.image_handler.full_image = BytesIO()
+
+        # Create a default black image
+        default_img = Image.new("RGB", (400, 100), "black")
+        self.image_handler.save_images(default_img)
+
+    def _format_retry_time(self, seconds):
+        """Format seconds into readable time format (e.g., 2h 30m 15s)."""
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        parts = []
+        if hours > 0:
+            parts.append(f"{int(hours)}h")
+        if minutes > 0:
+            parts.append(f"{int(minutes)}m")
+        if seconds > 0 or not parts:  # include seconds if it's the only value
+            parts.append(f"{int(seconds)}s")
+
+        return " ".join(parts)
+
+    def create_rate_limit_image(self, retry_after):
+        """Create an image showing rate limit message."""
+        background = Image.new("RGB", (400, 100), "black")
+        draw = ImageDraw.Draw(background)
+
+        try:
+            font = ImageFont.truetype("arial.ttf", 20)
+        except OSError:
+            font = ImageFont.load_default()
+
+        formatted_time = self._format_retry_time(retry_after)
+        message = f"Too Many Requests\nRetry after: {formatted_time}"
+        draw.text((20, 35), message, fill="white", font=font)
+
+        self.image_handler.save_images(background)
 
     def create_status_images(self, current_track_info, override_progress=None):
         """Create status images for Stream Deck display."""
@@ -334,6 +388,13 @@ class SpotifyTrackInfo:
             IndexError,
         ) as e:
             self.is_playing = False
+            if e.http_status == 429:  # Too Many Requests
+                retry_after = int(e.headers.get("Retry-After", 1))
+                formatted_time = self._format_retry_time(retry_after)
+                error_msg = f"Rate limited. Retry after {formatted_time}"
+                print(error_msg)
+                self.create_rate_limit_image(retry_after)
+                return {"error": error_msg}
             return {"error": f"Error occurred: {str(e)}"}
 
     def list_devices(self):
@@ -709,5 +770,4 @@ if __name__ == "__main__":
             print(f"http://localhost:{PORT}/left")
             print(f"http://localhost:{PORT}/right")
             IS_FIRST_RUN = False
-        print("Hello")
         time.sleep(1)

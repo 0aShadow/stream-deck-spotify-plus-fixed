@@ -17,8 +17,7 @@
 				{
 					"Image": "imgs/spotify-player/dial"
 				}
-			],
-			"PropertyInspectorPath": "inspector/inspector.html"
+			]
 		}
 	],
 	"Category": "Spotify Plus",
@@ -44,5 +43,6 @@
 		"Version": "20",
 		"Debug": "enabled"
 	},
-	"UUID": "fr.dbenech.spotify-plus"
+	"UUID": "fr.dbenech.spotify-plus",
+	"PropertyInspectorPath": "inspector/inspector.html"
 }
