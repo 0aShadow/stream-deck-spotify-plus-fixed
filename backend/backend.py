@@ -677,10 +677,10 @@ def _handle_track_change(data):
                 print("Returned to previous track")
                 message = "Returned to previous track"
 
-            # Petit délai pour laisser Spotify mettre à jour l'état
+            # Small delay to let Spotify update the state
             time.sleep(0.1)
 
-            # Mise à jour des informations de la piste
+            # Update track information
             track_info = spotify_info.get_current_track_info()
             if "error" not in track_info:
                 print(f"Updated to: {track_info['track_name']}")
@@ -703,14 +703,12 @@ if __name__ == "__main__":
 
     IS_FIRST_RUN = True
     LAST_API_CALL = 0
-    CURRENT_REFRESH_RATE = (
-        REFRESH_RATE_PLAYING  # Ajout d'une variable pour le taux de rafraîchissement
-    )
+    CURRENT_REFRESH_RATE = REFRESH_RATE_PLAYING  # Add a variable for refresh rate
 
     while True:
         current_time = time.time()
 
-        # Ne vérifier la fin de piste que si on a des informations de timing valides
+        # Only check for track end if we have valid timing information
         if (
             spotify_info.track.is_playing
             and spotify_info.image_handler.current_track_start_time
@@ -728,7 +726,7 @@ if __name__ == "__main__":
                     spotify_info.create_status_images(track_info)
                 continue
 
-        # Ne faire l'appel API que si le délai de rafraîchissement est écoulé
+        # Only make API call if refresh delay has elapsed
         if current_time - LAST_API_CALL >= CURRENT_REFRESH_RATE or IS_FIRST_RUN:
             current_track_info = spotify_info.get_current_track_info()
             LAST_API_CALL = current_time
@@ -743,9 +741,11 @@ if __name__ == "__main__":
                 )
             else:
                 print(f"\n{current_track_info['error']}")
-                CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED  # Utiliser un délai plus long quand il n'y a pas de lecture
+                CURRENT_REFRESH_RATE = (
+                    REFRESH_RATE_PAUSED  # Use longer delay when no playback
+                )
 
-        # Mettre à jour la barre de progression seulement si une lecture est en cours
+        # Update progress bar only if playback is active
         elif (
             spotify_info.track.is_playing
             and spotify_info.image_handler.current_track_start_time
@@ -769,4 +769,4 @@ if __name__ == "__main__":
             print(f"http://localhost:{PORT}/right")
             IS_FIRST_RUN = False
 
-        time.sleep(1)  # Toujours attendre 1 seconde entre les itérations
+        time.sleep(1)  # Always wait 1 second between iterations
