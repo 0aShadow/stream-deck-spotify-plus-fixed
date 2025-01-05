@@ -195,6 +195,78 @@ class SpotifyImageHandler:
             return current_progress_ms / total_ms
         return None
 
+    def create_login_message_image(self):
+        """Create an image showing login message."""
+        background = Image.new("RGB", (400, 100), "black")
+        draw = ImageDraw.Draw(background)
+
+        try:
+            font = ImageFont.truetype("arial.ttf", 24)
+        except OSError:
+            font = ImageFont.load_default()
+
+        message = "Please Login to Spotify"
+        # Get text size for centering
+        text_bbox = draw.textbbox((0, 0), message, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+
+        # Calculate center position
+        x = (400 - text_width) // 2
+        y = (100 - text_height) // 2
+
+        draw.text((x, y), message, fill="white", font=font)
+        self.save_images(background)
+
+    def create_error_message_image(self, error_message):
+        """Create an image showing error message."""
+        background = Image.new("RGB", (400, 100), "black")
+        draw = ImageDraw.Draw(background)
+
+        try:
+            title_font = ImageFont.truetype("arial.ttf", 20)
+            desc_font = ImageFont.truetype("arial.ttf", 16)
+        except OSError:
+            title_font = ImageFont.load_default()
+            desc_font = ImageFont.load_default()
+
+        # Draw title
+        title = "Error"
+        title_bbox = draw.textbbox((0, 0), title, font=title_font)
+        title_width = title_bbox[2] - title_bbox[0]
+        x = (400 - title_width) // 2
+        draw.text((x, 20), title, fill="#FF0000", font=title_font)
+
+        # Draw error message
+        # Wrap text if too long
+        words = error_message.split()
+        lines = []
+        current_line = []
+        for word in words:
+            current_line.append(word)
+            test_line = " ".join(current_line)
+            if desc_font.getlength(test_line) > 360:  # Leave some margin
+                if len(current_line) > 1:
+                    current_line.pop()
+                    lines.append(" ".join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(test_line)
+                    current_line = []
+        if current_line:
+            lines.append(" ".join(current_line))
+
+        # Draw each line
+        y = 50
+        for line in lines[:2]:  # Limit to 2 lines
+            bbox = draw.textbbox((0, 0), line, font=desc_font)
+            width = bbox[2] - bbox[0]
+            x = (400 - width) // 2
+            draw.text((x, y), line, fill="white", font=desc_font)
+            y += 20
+
+        self.save_images(background)
+
 
 class TrackState:
     """Class to hold track-related state."""
@@ -204,6 +276,9 @@ class TrackState:
         self.current_liked = False
         self.last_info = None
         self.is_playing = False
+        # Add track change timing attributes
+        self.last_track_change_time = 0
+        self.last_track_change_direction = None
 
 
 class VolumeState:
@@ -703,70 +778,108 @@ if __name__ == "__main__":
 
     IS_FIRST_RUN = True
     LAST_API_CALL = 0
-    CURRENT_REFRESH_RATE = REFRESH_RATE_PLAYING  # Add a variable for refresh rate
+    CURRENT_REFRESH_RATE = REFRESH_RATE_PLAYING
+    NEEDS_LOGIN = True
+    HAS_CREDENTIALS_ERROR = False
+
+    # Create initial login message
+    spotify_info.image_handler.create_login_message_image()
 
     while True:
         current_time = time.time()
 
-        # Only check for track end if we have valid timing information
-        if (
-            spotify_info.track.is_playing
-            and spotify_info.image_handler.current_track_start_time
-        ):
-            if (
-                spotify_info.image_handler.current_track_start_time
-                and spotify_info.image_handler.current_track_duration
-                and current_time - spotify_info.image_handler.current_track_start_time
-                >= spotify_info.image_handler.current_track_duration
-            ):
-                track_info = spotify_info.get_current_track_info()
-                LAST_API_CALL = current_time
-                if "error" not in track_info:
-                    spotify_info.track.last_info = track_info
-                    spotify_info.create_status_images(track_info)
-                continue
+        try:
+            # Only try authentication if we don't have a credentials error
+            if NEEDS_LOGIN and not HAS_CREDENTIALS_ERROR:
+                spotify_info.sp.current_playback()
+                NEEDS_LOGIN = False
+                print("Successfully authenticated with Spotify")
 
-        # Only make API call if refresh delay has elapsed
-        if current_time - LAST_API_CALL >= CURRENT_REFRESH_RATE or IS_FIRST_RUN:
-            current_track_info = spotify_info.get_current_track_info()
-            LAST_API_CALL = current_time
+            # Only proceed with normal operation if logged in
+            if not NEEDS_LOGIN and not HAS_CREDENTIALS_ERROR:
+                # Only check for track end if we have valid timing information
+                if (
+                    spotify_info.track.is_playing
+                    and spotify_info.image_handler.current_track_start_time
+                ):
+                    if (
+                        spotify_info.image_handler.current_track_start_time
+                        and spotify_info.image_handler.current_track_duration
+                        and current_time
+                        - spotify_info.image_handler.current_track_start_time
+                        >= spotify_info.image_handler.current_track_duration
+                    ):
+                        track_info = spotify_info.get_current_track_info()
+                        LAST_API_CALL = current_time
+                        if "error" not in track_info:
+                            spotify_info.track.last_info = track_info
+                            spotify_info.create_status_images(track_info)
+                        continue
 
-            if "error" not in current_track_info:
-                spotify_info.track.last_info = current_track_info
-                spotify_info.create_status_images(current_track_info)
-                CURRENT_REFRESH_RATE = (
-                    REFRESH_RATE_PLAYING
-                    if spotify_info.track.is_playing
-                    else REFRESH_RATE_PAUSED
+                # Only make API call if refresh delay has elapsed
+                if current_time - LAST_API_CALL >= CURRENT_REFRESH_RATE or IS_FIRST_RUN:
+                    current_track_info = spotify_info.get_current_track_info()
+                    LAST_API_CALL = current_time
+
+                    if "error" not in current_track_info:
+                        spotify_info.track.last_info = current_track_info
+                        spotify_info.create_status_images(current_track_info)
+                        CURRENT_REFRESH_RATE = (
+                            REFRESH_RATE_PLAYING
+                            if spotify_info.track.is_playing
+                            else REFRESH_RATE_PAUSED
+                        )
+                    else:
+                        print(f"\n{current_track_info['error']}")
+                        CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
+
+                # Update progress bar only if playback is active
+                elif (
+                    spotify_info.track.is_playing
+                    and spotify_info.image_handler.current_track_start_time
+                    and spotify_info.image_handler.current_track_duration
+                    and spotify_info.track.last_info
+                ):
+                    elapsed_time = (
+                        current_time
+                        - spotify_info.image_handler.current_track_start_time
+                    )
+                    progress_ratio = min(
+                        elapsed_time
+                        / spotify_info.image_handler.current_track_duration,
+                        1.0,
+                    )
+                    spotify_info.create_status_images(
+                        spotify_info.track.last_info, override_progress=progress_ratio
+                    )
+
+            if IS_FIRST_RUN:
+                print("Status images updated")
+                print("Access the images at:")
+                print(f"http://localhost:{PORT}/left")
+                print(f"http://localhost:{PORT}/right")
+                IS_FIRST_RUN = False
+
+        except spotipy.SpotifyOauthError as e:
+            error_desc = str(e)
+            if "invalid_client" in error_desc:
+                print("Error: Invalid Spotify credentials")
+                spotify_info.image_handler.create_error_message_image(
+                    "Invalid Spotify credentials"
                 )
+                HAS_CREDENTIALS_ERROR = True
             else:
-                print(f"\n{current_track_info['error']}")
-                CURRENT_REFRESH_RATE = (
-                    REFRESH_RATE_PAUSED  # Use longer delay when no playback
+                print(f"Authentication error: {error_desc}")
+                spotify_info.image_handler.create_error_message_image(
+                    "Authentication error"
                 )
+                HAS_CREDENTIALS_ERROR = True
 
-        # Update progress bar only if playback is active
-        elif (
-            spotify_info.track.is_playing
-            and spotify_info.image_handler.current_track_start_time
-            and spotify_info.image_handler.current_track_duration
-            and spotify_info.track.last_info
-        ):
-            elapsed_time = (
-                current_time - spotify_info.image_handler.current_track_start_time
+        except spotipy.SpotifyException as e:
+            print(f"Spotify error: {str(e)}")
+            spotify_info.image_handler.create_error_message_image(
+                "Spotify error occurred"
             )
-            progress_ratio = min(
-                elapsed_time / spotify_info.image_handler.current_track_duration, 1.0
-            )
-            spotify_info.create_status_images(
-                spotify_info.track.last_info, override_progress=progress_ratio
-            )
-
-        if IS_FIRST_RUN:
-            print("Status images updated")
-            print("Access the images at:")
-            print(f"http://localhost:{PORT}/left")
-            print(f"http://localhost:{PORT}/right")
-            IS_FIRST_RUN = False
+            HAS_CREDENTIALS_ERROR = True
 
         time.sleep(1)  # Always wait 1 second between iterations

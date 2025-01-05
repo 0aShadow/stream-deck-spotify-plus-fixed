@@ -20,25 +20,34 @@ streamDeck.settings.onDidReceiveSettings(async (ev: DidReceiveSettingsEvent<Spot
         ...settings.global,
     });
 
-    //     // Write settings to .env file for Python backend
-    //     const envContent = `
-    // SPOTIFY_CLIENT_ID=${settings.clientId || ''}
-    // SPOTIFY_CLIENT_SECRET=${settings.clientSecret || ''}
-    // SPOTIFY_REDIRECT_URI=http://localhost:8491/callbacks
-    // `.trim();
-
-    //     const envPath = path.join(__dirname, 'backend/.env');
-    //     fs.writeFileSync(envPath, envContent);
-
-    //     // Restart Python process with new settings
-    //     if (pythonProcess) {
-    //         pythonProcess.kill();
-    //     }
-
-    //     startPythonBackend();
+    startPythonBackend();
 });
 
-function startPythonBackend() {
+async function startPythonBackend() {
+
+    // Restart Python process with new settings
+    if (pythonProcess) {
+        pythonProcess.kill();
+    }
+
+    const settings = await streamDeck.settings.getGlobalSettings();
+    streamDeck.logger.info("Settings: " + JSON.stringify(settings));
+
+    if (!settings.clientId || !settings.clientSecret) {
+        streamDeck.logger.error("Client ID or Client Secret is missing");
+        return;
+    }
+
+    // Write settings to .env file for Python backend
+    const envContent = `
+    SPOTIFY_CLIENT_ID=${settings.clientId || ''}
+    SPOTIFY_CLIENT_SECRET=${settings.clientSecret || ''}
+    SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
+    `.trim();
+
+    const envPath = path.join(__dirname, 'backend/.env');
+    fs.writeFileSync(envPath, envContent);
+
     // Use Python from virtual environment
     const pythonPath = process.platform === 'win32'
         ? path.join(__dirname, 'backend/venv/Scripts/python.exe')
@@ -61,6 +70,6 @@ streamDeck.logger.setLevel(LogLevel.INFO);
 streamDeck.actions.registerAction(new SpotifyPlayerDial());
 
 // Start initial Python backend
-// startPythonBackend();
+startPythonBackend();
 
 streamDeck.connect();
