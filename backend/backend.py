@@ -276,6 +276,7 @@ class TrackState:
         self.current_liked = False
         self.last_info = None
         self.is_playing = False
+        self.shuffle_state = False  # Added shuffle state
         # Add track change timing attributes
         self.last_track_change_time = 0
         self.last_track_change_direction = None
@@ -290,6 +291,7 @@ class VolumeState:
         self.last_rotate_time = 0
         self.update_delay = 0.1
         self.refresh_delay = 10.0
+        self.last_unmuted_volume = 50  # Store the last unmuted volume
 
 
 class SpotifyTrackInfo:
@@ -508,7 +510,7 @@ class SpotifyTrackInfo:
             self.create_status_images(current_track_info)
 
             return {
-                "status": "success",
+                "status": "succ/ess",
                 "message": "Unliked track"
                 if not self.track.current_liked
                 else "Liked track",
@@ -516,6 +518,107 @@ class SpotifyTrackInfo:
         except (spotipy.SpotifyException, requests.RequestException) as e:
             print(f"Error toggling like status: {str(e)}")
             return {"status": "error", "message": str(e)}, 500
+
+    def update_button_states(self):
+        """Update all button states based on current playback."""
+        try:
+            current_playback = self.sp.current_playback()
+            if not current_playback:
+                return False
+
+            is_playing = current_playback.get("is_playing", False)
+            is_shuffle = current_playback.get("shuffle_state", False)
+            is_muted = current_playback["device"]["volume_percent"] == 0
+
+            # Get current track's like status
+            track_id = current_playback["item"]["id"]
+            is_liked = self.sp.current_user_saved_tracks_contains([track_id])[0]
+
+            self.button_state.update_states(is_playing, is_liked, is_shuffle, is_muted)
+            return True
+        except Exception as e:
+            print(f"Error updating button states: {str(e)}")
+            return False
+
+    def handle_player_action(self, action_type):
+        """Handle player actions."""
+        try:
+            if action_type == "next":
+                self.sp.next_track()
+            elif action_type == "previous":
+                self.sp.previous_track()
+            elif action_type == "play":
+                current_playback = self.sp.current_playback()
+                if current_playback and current_playback["is_playing"]:
+                    self.sp.pause_playback()
+                else:
+                    self.sp.start_playback()
+            elif action_type == "like":
+                current_track = self.sp.current_user_playing_track()
+                if current_track:
+                    track_id = current_track["item"]["id"]
+                    if self.sp.current_user_saved_tracks_contains([track_id])[0]:
+                        self.sp.current_user_saved_tracks_delete([track_id])
+                    else:
+                        self.sp.current_user_saved_tracks_add([track_id])
+            elif action_type == "shuffle":
+                if not self._check_premium():
+                    return {"error": "Shuffle control requires Spotify Premium"}, 403
+                current_playback = self.sp.current_playback()
+                if current_playback:
+                    new_state = not current_playback["shuffle_state"]
+                    self.sp.shuffle(new_state)
+            elif action_type == "volumeup":
+                current_volume = self.sp.current_playback()["device"]["volume_percent"]
+                new_volume = min(100, current_volume + 10)
+                self.sp.volume(new_volume)
+            elif action_type == "volumedown":
+                current_volume = self.sp.current_playback()["device"]["volume_percent"]
+                new_volume = max(0, current_volume - 10)
+                self.sp.volume(new_volume)
+            elif action_type == "volumemute":
+                current_volume = self.sp.current_playback()["device"]["volume_percent"]
+                if current_volume > 0:
+                    self.volume.last_unmuted_volume = current_volume
+                    self.sp.volume(0)
+                else:
+                    self.sp.volume(self.volume.last_unmuted_volume)
+            elif action_type == "volumeset":
+                volume_level = request.json.get("volume", 50)
+                self.sp.volume(volume_level)
+            elif action_type == "playlist":
+                playlist_uri = request.json.get("playlist_uri")
+                if playlist_uri:
+                    self.sp.start_playback(context_uri=playlist_uri)
+
+            # Wait for Spotify to update state
+            time.sleep(0.5)
+
+            # Get current states
+            current_playback = self.sp.current_playback()
+            current_track = self.sp.current_user_playing_track()
+
+            button_states = {
+                "is_playing": current_playback["is_playing"]
+                if current_playback
+                else False,
+                "is_liked": self.sp.current_user_saved_tracks_contains(
+                    [current_track["item"]["id"]]
+                )[0]
+                if current_track and current_track["item"]
+                else False,
+                "is_shuffle": current_playback["shuffle_state"]
+                if current_playback
+                else False,
+                "is_muted": current_playback["device"]["volume_percent"] == 0
+                if current_playback and current_playback["device"]
+                else False,
+            }
+
+            return {"success": True, "states": button_states}
+
+        except Exception as e:
+            return {"error": str(e)}, 500
 
 
 # Create SpotifyTrackInfo instance before Flask routes
@@ -547,10 +650,13 @@ def handle_left_action():
             spotify_info.track.last_info["is_playing"] = not current_playing_state
             spotify_info.create_status_images(spotify_info.track.last_info)
         spotify_info.track.is_playing = not current_playing_state
+
         # Send immediate response
         response = {"status": "success", "message": "Playback toggled"}
         threading.Thread(
-            target=_async_playback_toggle, args=(current_playing_state,), daemon=True
+            target=_async_playback_toggle_with_refresh,
+            args=(current_playing_state,),
+            daemon=True,
         ).start()
 
         return jsonify(response), 200
@@ -563,8 +669,8 @@ def handle_left_action():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-def _async_playback_toggle(current_playing_state):
-    """Handle the actual API call asynchronously."""
+def _async_playback_toggle_with_refresh(current_playing_state):
+    """Handle the actual API call asynchronously and refresh track info."""
     try:
         if current_playing_state:
             spotify_info.sp.pause_playback()
@@ -574,6 +680,9 @@ def _async_playback_toggle(current_playing_state):
             except spotipy.SpotifyException:
                 # Try forced playback if simple play fails
                 _handle_forced_playback(None)
+
+        # Refresh track information
+        _refresh_track_info()
     except spotipy.SpotifyException as e:
         print(f"Error in async playback toggle: {str(e)}")
 
@@ -587,6 +696,14 @@ def handle_right_action():
             return jsonify({"status": "error", "message": "Invalid action data"}), 400
 
         response = _process_right_action(data)
+
+        # Refresh track information after action (except for like toggle which handles its own refresh)
+        if data["action"] not in ("tap", "dialDown"):
+            if not _refresh_track_info():
+                return jsonify(
+                    {"status": "error", "message": "Failed to refresh track info"}
+                ), 500
+
         return jsonify(response[0]), response[1]
 
     except (spotipy.SpotifyException, requests.RequestException) as e:
@@ -752,15 +869,12 @@ def _handle_track_change(data):
                 print("Returned to previous track")
                 message = "Returned to previous track"
 
-            # Small delay to let Spotify update the state
-            time.sleep(0.1)
-
-            # Update track information
-            track_info = spotify_info.get_current_track_info()
-            if "error" not in track_info:
-                print(f"Updated to: {track_info['track_name']}")
-                spotify_info.track.last_info = track_info
-                spotify_info.create_status_images(track_info)
+            # Refresh track information
+            if not _refresh_track_info():
+                return {
+                    "status": "error",
+                    "message": "Failed to refresh track info",
+                }, 500
 
             return {"status": "success", "message": message}, 200
 
@@ -769,6 +883,211 @@ def _handle_track_change(data):
     except spotipy.SpotifyException as e:
         print(f"Error changing track: {str(e)}")
         return {"status": "error", "message": str(e)}, 500
+
+
+def _refresh_track_info():
+    """Refresh track information and update display."""
+    # Small delay to let Spotify update the state
+    time.sleep(0.1)
+
+    # Update track information
+    track_info = spotify_info.get_current_track_info()
+    if "error" not in track_info:
+        spotify_info.track.last_info = track_info
+
+        # Update shuffle state from current playback
+        try:
+            current_playback = spotify_info.sp.current_playback()
+            if current_playback:
+                spotify_info.track.shuffle_state = current_playback.get(
+                    "shuffle_state", False
+                )
+        except:
+            pass  # Keep existing shuffle state if update fails
+
+        spotify_info.create_status_images(track_info)
+        return True
+    return False
+
+
+def _check_premium():
+    """Check if the user has a Spotify Premium account."""
+    try:
+        user = spotify_info.sp.current_user()
+        return user["product"] == "premium"
+    except:
+        return False
+
+
+@app.route("/player", methods=["POST"])
+def handle_player_action():
+    """Handle all player actions."""
+    try:
+        data = request.get_json()
+        if not data or "action" not in data:
+            return jsonify({"status": "error", "message": "Invalid action data"}), 400
+
+        action = data["action"]
+        value = data.get("value")
+
+        if action == "next":
+            spotify_info.sp.next_track()
+            message = "Skipped to next track"
+        elif action == "previous":
+            spotify_info.sp.previous_track()
+            message = "Returned to previous track"
+        elif action == "playpause":
+            current_playback = spotify_info.sp.current_playback()
+            current_playing_state = current_playback and current_playback.get(
+                "is_playing"
+            )
+
+            if current_playing_state:
+                spotify_info.sp.pause_playback()
+                message = "Paused playback"
+            else:
+                try:
+                    spotify_info.sp.start_playback()
+                    message = "Started playback"
+                except spotipy.SpotifyException:
+                    _handle_forced_playback(None)
+                    message = "Started playback (forced)"
+        elif action == "togglelike":
+            response = spotify_info._handle_like_toggle()
+            return jsonify(response[0]), response[1]
+        elif action == "toggleshuffle":
+            # Vérifier si l'utilisateur a un compte Premium
+            if not _check_premium():
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": "Shuffle control requires Spotify Premium",
+                    }
+                ), 403
+
+            try:
+                current_playback = spotify_info.sp.current_playback()
+                if not current_playback:
+                    return jsonify(
+                        {"status": "error", "message": "No active playback"}
+                    ), 400
+
+                current_shuffle = current_playback.get("shuffle_state", False)
+                spotify_info.sp.shuffle(not current_shuffle)
+                message = "Shuffle " + ("disabled" if current_shuffle else "enabled")
+            except spotipy.SpotifyException as e:
+                if e.http_status == 403:
+                    return jsonify(
+                        {
+                            "status": "error",
+                            "message": "This device doesn't support shuffle control",
+                        }
+                    ), 403
+                raise
+        elif action == "volumeup":
+            current_playback = spotify_info.sp.current_playback()
+            if not current_playback:
+                return jsonify(
+                    {"status": "error", "message": "No active playback"}
+                ), 400
+
+            current_volume = current_playback["device"]["volume_percent"]
+            new_volume = min(100, current_volume + 10)
+            spotify_info.sp.volume(new_volume)
+            spotify_info.volume.last_unmuted_volume = new_volume
+            message = f"Volume increased to {new_volume}%"
+        elif action == "volumedown":
+            current_playback = spotify_info.sp.current_playback()
+            if not current_playback:
+                return jsonify(
+                    {"status": "error", "message": "No active playback"}
+                ), 400
+
+            current_volume = current_playback["device"]["volume_percent"]
+            new_volume = max(0, current_volume - 10)
+            spotify_info.sp.volume(new_volume)
+            spotify_info.volume.last_unmuted_volume = (
+                new_volume
+                if new_volume > 0
+                else spotify_info.volume.last_unmuted_volume
+            )
+            message = f"Volume decreased to {new_volume}%"
+        elif action == "volumemute":
+            current_playback = spotify_info.sp.current_playback()
+            if not current_playback:
+                return jsonify(
+                    {"status": "error", "message": "No active playback"}
+                ), 400
+
+            current_volume = current_playback["device"]["volume_percent"]
+
+            if current_volume > 0:
+                # Si le volume n'est pas à 0, on sauvegarde le volume actuel et on mute
+                spotify_info.volume.last_unmuted_volume = current_volume
+                spotify_info.sp.volume(0)
+                message = "Volume muted"
+            else:
+                # Si le volume est à 0, on restore le dernier volume
+                restore_volume = spotify_info.volume.last_unmuted_volume
+                spotify_info.sp.volume(restore_volume)
+                message = f"Volume restored to {restore_volume}%"
+        elif action == "volumeset":
+            if value is None:
+                return jsonify(
+                    {"status": "error", "message": "Volume value is required"}
+                ), 400
+
+            volume = max(0, min(100, value))
+            spotify_info.sp.volume(volume)
+            if volume > 0:
+                spotify_info.volume.last_unmuted_volume = volume
+            message = f"Volume set to {volume}%"
+        elif action == "startplaylist":
+            playlist_uri = data.get("playlistUri")
+            if not playlist_uri:
+                return jsonify(
+                    {"status": "error", "message": "Playlist URI is required"}
+                ), 400
+
+            spotify_info.sp.start_playback(context_uri=playlist_uri)
+            message = "Started playlist"
+        else:
+            return jsonify({"status": "error", "message": "Invalid action"}), 400
+
+        # Refresh track information after any action
+        if not _refresh_track_info():
+            return jsonify(
+                {"status": "error", "message": "Failed to refresh track info"}
+            ), 500
+
+        return jsonify({"status": "success", "message": message}), 200
+
+    except spotipy.SpotifyException as e:
+        print(f"Spotify API error: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    except Exception as e:
+        print(f"Error handling player action: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# Add new routes for button states
+@app.route("/states", methods=["GET"])
+def get_button_states():
+    """Get current states of all buttons."""
+    try:
+        # Use cached states instead of making API calls
+        button_states = {
+            "is_playing": spotify_info.track.is_playing,
+            "is_liked": spotify_info.track.current_liked,
+            "is_shuffle": spotify_info.track.shuffle_state,  # Use cached shuffle state
+            "is_muted": spotify_info.volume.current == 0
+            if spotify_info.volume.current is not None
+            else False,
+        }
+
+        return jsonify({"success": True, "states": button_states})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
@@ -853,6 +1172,10 @@ if __name__ == "__main__":
                         spotify_info.track.last_info, override_progress=progress_ratio
                     )
 
+                # Update button states at the refresh rate
+                if current_time - LAST_API_CALL >= CURRENT_REFRESH_RATE or IS_FIRST_RUN:
+                    spotify_info.update_button_states()
+
             if IS_FIRST_RUN:
                 print("Status images updated")
                 print("Access the images at:")
@@ -881,5 +1204,8 @@ if __name__ == "__main__":
                 "Spotify error occurred"
             )
             HAS_CREDENTIALS_ERROR = True
+
+        except Exception as e:
+            print(f"Error in main loop: {str(e)}")
 
         time.sleep(1)  # Always wait 1 second between iterations

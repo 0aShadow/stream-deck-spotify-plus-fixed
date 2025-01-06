@@ -18,6 +18,106 @@
 					"Image": "imgs/spotify-player/dial"
 				}
 			]
+		},
+		{
+			"Icon": "imgs/action/next",
+			"UUID": "fr.dbenech.spotify-plus.next-track",
+			"Name": "Next Track",
+			"States": [
+				{
+					"Image": "imgs/action/next"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/previous",
+			"UUID": "fr.dbenech.spotify-plus.previous-track",
+			"Name": "Previous Track",
+			"States": [
+				{
+					"Image": "imgs/action/previous"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/play_pause",
+			"UUID": "fr.dbenech.spotify-plus.play-pause",
+			"Name": "Play/Pause",
+			"States": [
+				{
+					"Image": "imgs/action/play_pause"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/like",
+			"UUID": "fr.dbenech.spotify-plus.toggle-like",
+			"Name": "Toggle Like",
+			"States": [
+				{
+					"Image": "imgs/action/like"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/shuffle",
+			"UUID": "fr.dbenech.spotify-plus.toggle-shuffle",
+			"Name": "Toggle Shuffle",
+			"States": [
+				{
+					"Image": "imgs/action/shuffle"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/volume-up",
+			"UUID": "fr.dbenech.spotify-plus.volume-up",
+			"Name": "Volume Up",
+			"States": [
+				{
+					"Image": "imgs/action/volume-up"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/volume-down",
+			"UUID": "fr.dbenech.spotify-plus.volume-down",
+			"Name": "Volume Down",
+			"States": [
+				{
+					"Image": "imgs/action/volume-down"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/volume",
+			"UUID": "fr.dbenech.spotify-plus.volume-mute",
+			"Name": "Volume Mute",
+			"States": [
+				{
+					"Image": "imgs/action/mute"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/volume",
+			"UUID": "fr.dbenech.spotify-plus.volume-set",
+			"Name": "Set Volume",
+			"States": [
+				{
+					"Image": "imgs/action/volume"
+				}
+			]
+		},
+		{
+			"Icon": "imgs/action/playlist",
+			"UUID": "fr.dbenech.spotify-plus.start-playlist",
+			"Name": "Start Playlist",
+			"States": [
+				{
+					"Image": "imgs/action/playlist"
+				}
+			]
 		}
 	],
 	"Category": "Spotify Plus",

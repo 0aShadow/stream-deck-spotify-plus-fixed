@@ -1,5 +1,12 @@
 import streamDeck, { LogLevel, DidReceiveGlobalSettingsEvent, DidReceiveSettingsEvent } from "@elgato/streamdeck";
 import { SpotifyPlayerDial } from "./actions/spotify-player-dial";
+import { SpotifyNextTrackAction } from "./actions/spotify-next-track";
+import { SpotifyPreviousTrackAction } from "./actions/spotify-previous-track";
+import { SpotifyPlayPauseAction } from "./actions/spotify-play-pause";
+import { SpotifyToggleLikeAction } from "./actions/spotify-toggle-like";
+import { SpotifyToggleShuffleAction } from "./actions/spotify-toggle-shuffle";
+import { SpotifyVolumeUpAction, SpotifyVolumeDownAction, SpotifyVolumeMuteAction, SpotifyVolumeSetAction } from "./actions/spotify-volume-control";
+import { SpotifyStartPlaylistAction } from "./actions/spotify-start-playlist";
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -68,8 +75,18 @@ async function startPythonBackend() {
 
 streamDeck.logger.setLevel(LogLevel.INFO);
 streamDeck.actions.registerAction(new SpotifyPlayerDial());
+streamDeck.actions.registerAction(new SpotifyNextTrackAction());
+streamDeck.actions.registerAction(new SpotifyPreviousTrackAction());
+streamDeck.actions.registerAction(new SpotifyPlayPauseAction());
+streamDeck.actions.registerAction(new SpotifyToggleLikeAction());
+streamDeck.actions.registerAction(new SpotifyToggleShuffleAction());
+streamDeck.actions.registerAction(new SpotifyVolumeUpAction());
+streamDeck.actions.registerAction(new SpotifyVolumeDownAction());
+streamDeck.actions.registerAction(new SpotifyVolumeMuteAction());
+streamDeck.actions.registerAction(new SpotifyVolumeSetAction());
+streamDeck.actions.registerAction(new SpotifyStartPlaylistAction());
 
 // Start initial Python backend
-startPythonBackend();
+// startPythonBackend();
 
 streamDeck.connect();
