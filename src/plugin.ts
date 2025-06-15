@@ -87,6 +87,6 @@ streamDeck.actions.registerAction(new SpotifyVolumeSetAction());
 streamDeck.actions.registerAction(new SpotifyStartPlaylistAction());
 
 // Start initial Python backend
-// startPythonBackend();
+startPythonBackend();
 
 streamDeck.connect();

@@ -18,7 +18,21 @@ This is a plugin to display the current Spotify player status on the Stream Deck
 
 ## Installation
 
-TODO
+
+To install the plugin, you need to have the Stream Deck software installed.
+
+Next, you need to run the following commands:
+
+```
+pnpm add -g @elgato/cli
+pnpm run watch
+streamdeck link fr.dbenech.spotify-plus.sdPlugin
+streamdeck restart fr.dbenech.spotify-plus 
+
+```
+
+Next, restart the Stream Deck software.
+
 
 ## Usage
 
