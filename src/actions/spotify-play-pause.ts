@@ -1,4 +1,4 @@
-import { action } from "@elgato/streamdeck";
+import streamDeck, { action } from "@elgato/streamdeck";
 import { SpotifyBaseAction } from "./spotify-base-action";
 import { ButtonStates } from "../types";
 

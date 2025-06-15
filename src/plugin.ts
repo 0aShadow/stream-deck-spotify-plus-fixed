@@ -32,6 +32,7 @@ streamDeck.settings.onDidReceiveSettings(async (ev: DidReceiveSettingsEvent<Spot
 
 async function startPythonBackend() {
 
+    streamDeck.logger.info("Starting Python backend");
     // Restart Python process with new settings
     if (pythonProcess) {
         pythonProcess.kill();
@@ -49,7 +50,7 @@ async function startPythonBackend() {
     const envContent = `
     SPOTIFY_CLIENT_ID=${settings.clientId || ''}
     SPOTIFY_CLIENT_SECRET=${settings.clientSecret || ''}
-    SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
+    SPOTIFY_REDIRECT_URI=http://localhost:4202/callback
     `.trim();
 
     const envPath = path.join(__dirname, 'backend/.env');
@@ -73,7 +74,7 @@ async function startPythonBackend() {
     });
 }
 
-streamDeck.logger.setLevel(LogLevel.INFO);
+streamDeck.logger.setLevel(LogLevel.DEBUG);
 streamDeck.actions.registerAction(new SpotifyPlayerDial());
 streamDeck.actions.registerAction(new SpotifyNextTrackAction());
 streamDeck.actions.registerAction(new SpotifyPreviousTrackAction());

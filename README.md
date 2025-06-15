@@ -43,6 +43,6 @@ Next, restart the Stream Deck software.
 3. Enter your Spotify client ID and client secret in the settings.
    - You can get your client ID and client secret from [here](https://developer.spotify.com/dashboard/applications)
    - "Create an app"
-   - Set the redirect uri to `http://localhost:8888/callback`
+   - Set the redirect uri to `http://localhost:4202/callback`
    - Copy the client ID and client secret into the streamdeck plugin settings
 4. (optional) Change the player refresh rate in the settings (Its only the screen refresh rate, not the Spotify api backend refresh rate)

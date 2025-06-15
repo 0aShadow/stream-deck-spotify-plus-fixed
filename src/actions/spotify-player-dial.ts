@@ -2,108 +2,56 @@ import streamDeck, { action, DialUpEvent, SingletonAction, WillAppearEvent, Json
 import https from 'https';
 import http from 'http';
 import { SpotifySettings } from '../types';
+import { SpotifyBaseAction } from "./spotify-base-action";
 
 @action({ UUID: "fr.dbenech.spotify-plus.spotify-player" })
 export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
-    private refreshIntervals: Map<string, NodeJS.Timeout> = new Map();
+    private static dialActions: Map<string, { action: any, url: string }> = new Map();
 
-    private clearInterval(url: string): void {
-        const interval = this.refreshIntervals.get(url);
-        if (interval) {
-            streamDeck.logger.info("Clearing interval for " + url);
-            clearInterval(interval);
-            this.refreshIntervals.delete(url);
-        }
-    }
-
-    private clearAllIntervals(): void {
-        this.refreshIntervals.forEach((interval) => {
-            streamDeck.logger.info("Clearing interval for " + interval);
-            clearInterval(interval);
-        });
-        this.refreshIntervals.clear();
-    }
-
-    private async downloadImage(url: string, retries = 3): Promise<string> {
-        return new Promise((resolve, reject) => {
-            // Determine which protocol to use based on URL
+    private static async updateImage(action: any, url: string) {
+        try {
             const protocol = url.startsWith('https:') ? https : http;
 
-            const request = protocol.get(url, {
-                timeout: 5000, // 5 second timeout
-                headers: {
-                    'User-Agent': 'StreamDeck-Plugin'
-                }
-            }, (response) => {
-                if (response.statusCode !== 200) {
-                    reject(new Error(`HTTP Error: ${response.statusCode}`));
-                    return;
-                }
+            const base64Image = await new Promise<string>((resolve, reject) => {
+                const request = protocol.get(url, {
+                    timeout: 5000, // 5 second timeout
+                    headers: {
+                        'User-Agent': 'StreamDeck-Plugin'
+                    }
+                }, (response) => {
+                    if (response.statusCode !== 200) {
+                        reject(new Error(`HTTP Error: ${response.statusCode}`));
+                        return;
+                    }
 
-                const chunks: Buffer[] = [];
+                    const chunks: Buffer[] = [];
 
-                response.on('data', (chunk: Buffer) => {
-                    chunks.push(chunk);
+                    response.on('data', (chunk: Buffer) => {
+                        chunks.push(chunk);
+                    });
+
+                    response.on('end', () => {
+                        try {
+                            const buffer = Buffer.concat(chunks);
+                            const base64Image = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+                            resolve(base64Image);
+                        } catch (error) {
+                            reject(error);
+                        }
+                    });
                 });
 
-                response.on('end', () => {
-                    try {
-                        const buffer = Buffer.concat(chunks);
-                        const base64Image = `data:image/jpeg;base64,${buffer.toString('base64')}`;
-                        resolve(base64Image);
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-            });
-
-            request.on('error', async (error) => {
-                if (retries > 0) {
-                    streamDeck.logger.info(`Retrying download, ${retries} attempts remaining`);
-                    try {
-                        const result = await this.downloadImage(url, retries - 1);
-                        resolve(result);
-                    } catch (retryError) {
-                        reject(retryError);
-                    }
-                } else {
+                request.on('error', (error) => {
                     streamDeck.logger.error(`Failed to download image: ${error.message}`);
                     reject(error);
-                }
+                });
+
+                request.on('timeout', () => {
+                    request.destroy();
+                    reject(new Error('Request timeout'));
+                });
             });
 
-            request.on('timeout', () => {
-                request.destroy();
-                reject(new Error('Request timeout'));
-            });
-        });
-    }
-
-    override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<SpotifySettings>): Promise<void> {
-        if (ev.action.isDial()) {
-            let str = ev.payload.settings;
-            streamDeck.logger.info("Settings set: " + JSON.stringify(str));
-            streamDeck.settings.setGlobalSettings(str.global);
-
-            const url = ev.payload.settings.imgUrl || '';
-            const refreshRate = ev.payload.settings.global.refreshRate || 5;
-
-            // Supprimer l'ancien interval pour cette URL s'il existe
-            this.clearInterval(url);
-
-            // Créer un nouvel interval
-            const interval = setInterval(() => {
-                this.updateImage(ev.action, url);
-            }, refreshRate * 1000);
-
-            this.refreshIntervals.set(url, interval);
-            await this.updateImage(ev.action, url);
-        }
-    }
-
-    private async updateImage(action: any, url: string) {
-        try {
-            const base64Image = await this.downloadImage(url);
             streamDeck.logger.debug("Updating image: " + url);
             return action.setFeedback({
                 "image": base64Image,
@@ -113,30 +61,44 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         }
     }
 
-    override async onWillAppear(ev: WillAppearEvent<SpotifySettings>): Promise<void> {
-        const url = String(ev.payload.settings.imgUrl || '');
-
-        const refreshRate = ev.payload.settings.global.refreshRate || 5;
-
+    override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<SpotifySettings>): Promise<void> {
         if (ev.action.isDial()) {
-            ev.action.setFeedbackLayout("layout.json");
-            await this.updateImage(ev.action, url);
+            let str = ev.payload.settings;
+            streamDeck.logger.info("Settings set: " + JSON.stringify(str));
+            streamDeck.settings.setGlobalSettings(str.global);
 
-            // Vérifier si un interval existe déjà pour cette URL
-            if (!this.refreshIntervals.has(url)) {
-                streamDeck.logger.info("Setting interval for " + url);
-                const interval = setInterval(() => {
-                    this.updateImage(ev.action, url);
-                }, refreshRate * 1000);
-
-                this.refreshIntervals.set(url, interval);
+            const url = ev.payload.settings.imgUrl || '';
+            const actionId = ev.action.id;
+            
+            // Update the stored URL for this action
+            const existingEntry = SpotifyPlayerDial.dialActions.get(actionId);
+            if (existingEntry) {
+                existingEntry.url = url;
+                await SpotifyPlayerDial.updateImage(ev.action, url);
             }
         }
     }
 
-    override onWillDisappear(ev: WillDisappearEvent): void {
+    override async onWillAppear(ev: WillAppearEvent<SpotifySettings>): Promise<void> {
         const url = String(ev.payload.settings.imgUrl || '');
-        this.clearInterval(url);
+        const actionId = ev.action.id;
+
+        if (ev.action.isDial()) {
+            // Store this action and its URL
+            SpotifyPlayerDial.dialActions.set(actionId, { action: ev.action, url: url });
+            streamDeck.logger.debug(`Adding dial instance with ID: ${actionId}, total active: ${SpotifyPlayerDial.dialActions.size}`);
+
+            ev.action.setFeedbackLayout("layout.json");
+            await SpotifyPlayerDial.updateImage(ev.action, url);
+        }
+    }
+
+    override onWillDisappear(ev: WillDisappearEvent): void {
+        const actionId = ev.action.id;
+
+        // Remove this action from our map
+        SpotifyPlayerDial.dialActions.delete(actionId);
+        streamDeck.logger.debug(`Removing dial instance with ID: ${actionId}, remaining active: ${SpotifyPlayerDial.dialActions.size}`);
     }
 
     private async sendAction(actionType: string, url: string, value?: number): Promise<void> {
@@ -184,7 +146,8 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         streamDeck.logger.info("onTouchTap triggered");
         const url = ev.payload.settings.imgUrl || '';
         this.sendAction('tap', url)
-            .then(() => this.updateImage(ev.action, url))
+            .then(() => SpotifyPlayerDial.updateAllDials())
+            .then(() => SpotifyBaseAction.updateAllButtonStates())
             .catch(error => streamDeck.logger.error(`Error in onTouchTap: ${error}`));
     }
 
@@ -192,7 +155,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         streamDeck.logger.info("onDialDown triggered");
         const url = ev.payload.settings.imgUrl || '';
         this.sendAction('dialDown', url)
-            .then(() => this.updateImage(ev.action, url))
+            .then(() => SpotifyPlayerDial.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialDown: ${error}`));
     }
 
@@ -200,7 +163,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         streamDeck.logger.info("onDialUp triggered");
         const url = ev.payload.settings.imgUrl || '';
         this.sendAction('dialUp', url)
-            .then(() => this.updateImage(ev.action, url))
+            .then(() => SpotifyPlayerDial.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialUp: ${error}`));
     }
 
@@ -208,7 +171,18 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         streamDeck.logger.info(`onDialRotate triggered with ticks: ${ev.payload.ticks}`);
         const url = ev.payload.settings.imgUrl || '';
         this.sendAction('rotate', url, ev.payload.ticks)
-            .then(() => this.updateImage(ev.action, url))
+            .then(() => SpotifyPlayerDial.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialRotate: ${error}`));
+    }
+
+    static async updateAllDials(): Promise<void> {
+        streamDeck.logger.debug("Updating all dials: " + SpotifyPlayerDial.dialActions.size);
+        
+        // Update all dial actions
+        SpotifyPlayerDial.dialActions.forEach(({ action, url }) => {
+            if (action && url) {
+                SpotifyPlayerDial.updateImage(action, url);
+            }
+        });
     }
 }

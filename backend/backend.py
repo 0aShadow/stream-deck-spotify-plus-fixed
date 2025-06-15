@@ -13,7 +13,7 @@ from spotipy.oauth2 import SpotifyOAuth
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from flask import Flask, send_file, request, jsonify
-import cairosvg
+# import cairosvg
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -23,12 +23,15 @@ DISABLE_FLASK_LOGS = True
 REFRESH_RATE_TRACK_END = 15
 REFRESH_RATE_PLAYING = 15
 REFRESH_RATE_PAUSED = 60
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("spotipy")
-logger.setLevel(logging.DEBUG)
-# Disable PIL debug logging
-pil_logger = logging.getLogger("PIL")
-pil_logger.setLevel(logging.INFO)
+
+# Configure logging for debugging
+# logging.basicConfig(level=logging.DEBUG)
+
+# logger = logging.getLogger("spotipy")
+# logger.setLevel(logging.DEBUG)
+
+# pil_logger = logging.getLogger("PIL")
+# pil_logger.setLevel(logging.INFO)
 
 
 app = Flask(__name__)
@@ -73,25 +76,24 @@ class SpotifyImageHandler:
 
     def add_heart_icon(self, background, is_liked):
         """Add heart icon to the image."""
-        heart_color = "#1DB954" if is_liked else "#404040"
-
-        # Load and colorize SVG
-        with open(
-            os.path.join(os.path.dirname(__file__), "spotify-like.svg"),
-            "r",
-            encoding="utf-8",
-        ) as file:
-            svg_content = file.read().replace(
-                "path d=", f'path fill="{heart_color}" d='
-            )
-        # Convert SVG to PNG
-        png_data = cairosvg.svg2png(
-            bytestring=svg_content.encode("utf-8"),
-            output_width=20,
-            output_height=20,
-        )
-        heart_image = Image.open(BytesIO(png_data))
-        background.paste(heart_image, (360, 65), heart_image)
+        # Choose the appropriate PNG file based on liked status
+        icon_filename = "spotify-liked.png" if is_liked else "spotify-like.png"
+        icon_path = os.path.join(os.path.dirname(__file__), icon_filename)
+        
+        try:
+            # Load and resize the PNG image
+            heart_image = Image.open(icon_path)
+            heart_image = heart_image.resize((20, 20), Image.Resampling.LANCZOS)
+            
+            # Paste the image with transparency support
+            if heart_image.mode == 'RGBA':
+                background.paste(heart_image, (360, 65), heart_image)
+            else:
+                background.paste(heart_image, (360, 65))
+        except FileNotFoundError:
+            print(f"Warning: Heart icon file not found: {icon_path}")
+        except Exception as e:
+            print(f"Error loading heart icon: {str(e)}")
 
     def save_images(self, background):
         """Save the full, left and right images."""
@@ -534,7 +536,11 @@ class SpotifyTrackInfo:
             track_id = current_playback["item"]["id"]
             is_liked = self.sp.current_user_saved_tracks_contains([track_id])[0]
 
-            self.button_state.update_states(is_playing, is_liked, is_shuffle, is_muted)
+            # Update the existing state objects
+            self.track.is_playing = is_playing
+            self.track.current_liked = is_liked
+            self.track.shuffle_state = is_shuffle
+            
             return True
         except Exception as e:
             print(f"Error updating button states: {str(e)}")
