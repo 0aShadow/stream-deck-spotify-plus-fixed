@@ -6,6 +6,7 @@ import { ButtonStates } from "../types";
 export class SpotifyPlayPauseAction extends SpotifyBaseAction {
     protected async handleAction(): Promise<void> {
         await this.sendAction('playpause');
+        streamDeck.logger.info("Play/Pause action sent");
     }
 
     protected updateImage(action: any, states: ButtonStates): void {

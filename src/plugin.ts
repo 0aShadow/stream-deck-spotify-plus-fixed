@@ -51,6 +51,7 @@ async function startPythonBackend() {
     SPOTIFY_CLIENT_ID=${settings.clientId || ''}
     SPOTIFY_CLIENT_SECRET=${settings.clientSecret || ''}
     SPOTIFY_REDIRECT_URI=http://localhost:4202/callback
+    SPOTIFY_THIS_DEVICE=${settings.thisDevice || ''}
     `.trim();
 
     const envPath = path.join(__dirname, 'backend/.env');

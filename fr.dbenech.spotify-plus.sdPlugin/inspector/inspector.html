@@ -39,6 +39,13 @@
     <sdpi-item label="Refresh Rate (seconds)">
         <sdpi-range setting="global.refreshRate" min="1" max="30" step="1" default="5" showlabels></sdpi-range>
     </sdpi-item>
+    <sdpi-item label="This device">
+        <sdpi-select setting="global.thisDevice" id="thisDeviceSelect"></sdpi-select>
+        <sdpi-button label="Refresh" onclick="refreshDevices()">Refresh</sdpi-button>
+    </sdpi-item>
+
+
+
     <sdpi-item label="Client ID">
         <sdpi-textfield setting="global.clientId" placeholder="Enter Spotify Client ID">
         </sdpi-textfield>
@@ -69,10 +76,46 @@
                     }
                 });
             }
+            await refreshDevices(globalSettings);
         } catch (error) {
             console.error('Error loading global settings:', error);
         }
     });
+
+    function refreshDevices(globalSettings = null) {
+        // fetch http://127.0.0.1:8491/devices and add the devices to the select
+        return fetch('http://127.0.0.1:8491/devices')
+            .then(response => response.json())
+            .then(data => {
+                console.log("Devices", data);
+                // clear the select
+                document.getElementById('thisDeviceSelect').innerHTML = '';
+                // add the devices to the select
+                data.devices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.id;
+                    option.textContent = device.name + " (" + device.type + ")";
+                    document.getElementById('thisDeviceSelect').appendChild(option);
+                });
+                
+                // set the selected device from global settings
+                if (globalSettings && globalSettings.thisDevice) {
+                    // Check if the selected device exists in the list
+                    const deviceExists = data.devices.some(device => device.id === globalSettings.thisDevice);
+                    
+                    if (deviceExists) {
+                        document.getElementById('thisDeviceSelect').value = globalSettings.thisDevice;
+                    } else {
+                        // Add an "Unknown" option if the selected device doesn't exist
+                        const unknownOption = document.createElement('option');
+                        unknownOption.value = "";
+                        unknownOption.textContent = "Unknown";
+                        document.getElementById('thisDeviceSelect').appendChild(unknownOption);
+                        document.getElementById('thisDeviceSelect').value = "";
+                    }
+                }
+            });
+    }
 
 </script>
 

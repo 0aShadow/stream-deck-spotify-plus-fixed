@@ -6,6 +6,8 @@ import threading
 from threading import Lock
 from io import BytesIO
 import os
+import socket
+import sys
 from dotenv import load_dotenv
 
 import spotipy
@@ -734,11 +736,15 @@ def _async_playback_toggle_with_refresh(current_playing_state):
         if current_playing_state:
             spotify_info.sp.pause_playback()
         else:
-            try:
+            # Use specific device if not playing
+            this_device_id = os.getenv("SPOTIFY_THIS_DEVICE")
+            if this_device_id:
+                try:
+                    spotify_info.sp.start_playback(device_id=this_device_id)
+                except spotipy.SpotifyException:
+                    spotify_info.sp.start_playback()
+            else:
                 spotify_info.sp.start_playback()
-            except spotipy.SpotifyException:
-                # Try forced playback if simple play fails
-                _handle_forced_playback(None)
 
         # Refresh track information
         _refresh_track_info()
@@ -867,6 +873,16 @@ def serve_all():
         return str(e), 500
 
 
+def check_port_available(port):
+    """Check if a port is available for use."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(('127.0.0.1', port))
+        return True
+    except socket.error:
+        return False
+
+
 def run_flask():
     """Run the Flask server."""
     app.run(host="127.0.0.1", port=PORT, debug=False)
@@ -951,7 +967,7 @@ def _refresh_track_info():
 
     # Update track information
     track_info = spotify_info.get_current_track_info()
-    if "error" not in track_info:
+    if "error" not in track_info and "no_track" not in track_info:
         spotify_info.track.last_info = track_info
 
         # Update shuffle state from current playback
@@ -965,6 +981,10 @@ def _refresh_track_info():
             pass  # Keep existing shuffle state if update fails
 
         spotify_info.create_status_images(track_info)
+        return True
+    elif "no_track" in track_info:
+        # Handle no track case
+        spotify_info.create_no_track_image()
         return True
     return False
 
@@ -1005,12 +1025,18 @@ def handle_player_action():
                 spotify_info.sp.pause_playback()
                 message = "Paused playback"
             else:
-                try:
+                # Use specific device if not playing
+                this_device_id = os.getenv("SPOTIFY_THIS_DEVICE")
+                if this_device_id:
+                    try:
+                        spotify_info.sp.start_playback(device_id=this_device_id)
+                        message = "Started playback on specified device"
+                    except spotipy.SpotifyException:
+                        spotify_info.sp.start_playback()
+                        message = "Started playback"
+                else:
                     spotify_info.sp.start_playback()
                     message = "Started playback"
-                except spotipy.SpotifyException:
-                    _handle_forced_playback(None)
-                    message = "Started playback (forced)"
         elif action == "togglelike":
             response = spotify_info._handle_like_toggle()
             return jsonify(response[0]), response[1]
@@ -1149,7 +1175,66 @@ def get_button_states():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/devices", methods=["GET"])
+def get_devices():
+    """Get list of available Spotify devices."""
+    try:
+        devices_data = spotify_info.sp.devices()
+        
+        if not devices_data or not devices_data.get("devices"):
+            return jsonify({
+                "success": True, 
+                "devices": [],
+                "message": "No devices found"
+            })
+        
+        # Format device information for JSON response
+        formatted_devices = []
+        for device in devices_data["devices"]:
+            formatted_device = {
+                "id": device["id"],
+                "name": device["name"],
+                "type": device["type"],
+                "is_active": device["is_active"],
+                "is_private_session": device["is_private_session"],
+                "is_restricted": device["is_restricted"],
+                "volume_percent": device["volume_percent"]
+            }
+            formatted_devices.append(formatted_device)
+        
+        # Find active device
+        active_device = next(
+            (device for device in formatted_devices if device["is_active"]),
+            None
+        )
+        
+        return jsonify({
+            "success": True,
+            "devices": formatted_devices,
+            "active_device": active_device,
+            "total_devices": len(formatted_devices)
+        })
+        
+    except spotipy.SpotifyException as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "Failed to get devices from Spotify API"
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "Unexpected error occurred"
+        }), 500
+
+
 if __name__ == "__main__":
+    # Check if port is available before starting
+    if not check_port_available(PORT):
+        print(f"Error: Port {PORT} is already in use. Please stop the existing service or change the port.")
+        sys.exit(1)
+
     # Start Flask server in a separate thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
