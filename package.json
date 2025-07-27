@@ -1,7 +1,8 @@
 {
     "scripts": {
         "build": "rollup -c",
-        "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart fr.dbenech.spotify-plus\""
+        "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart fr.dbenech.spotify-plus\"",
+        "install": "rollup -c && streamdeck link fr.dbenech.spotify-plus.sdPlugin && streamdeck restart fr.dbenech.spotify-plus\""
     },
     "type": "module",
     "devDependencies": {

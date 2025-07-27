@@ -42,7 +42,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
                 });
 
                 request.on('error', (error) => {
-                    streamDeck.logger.error(`Failed to download image: ${error.message}`);
+                    streamDeck.logger.error(`Failed to download image url:${url} : ${error}`);
                     reject(error);
                 });
 
@@ -87,9 +87,11 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
             // Store this action and its URL
             SpotifyPlayerDial.dialActions.set(actionId, { action: ev.action, url: url });
             streamDeck.logger.debug(`Adding dial instance with ID: ${actionId}, total active: ${SpotifyPlayerDial.dialActions.size}`);
+            SpotifyBaseAction.startGlobalUpdate();
 
             ev.action.setFeedbackLayout("layout.json");
             await SpotifyPlayerDial.updateImage(ev.action, url);
+
         }
     }
 
@@ -172,7 +174,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         const url = ev.payload.settings.imgUrl || '';
         this.sendAction('rotate', url, ev.payload.ticks)
             .then(() => SpotifyPlayerDial.updateImage(ev.action, url))
-            .catch(error => streamDeck.logger.error(`Error in onDialRotate: ${error}`));
+            .catch(error => streamDeck.logger.error(`Error in onDialRotate url:${url}, error:${error}`));
     }
 
     static async updateAllDials(): Promise<void> {

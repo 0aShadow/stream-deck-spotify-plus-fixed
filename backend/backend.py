@@ -816,7 +816,7 @@ def serve_all():
 
 def run_flask():
     """Run the Flask server."""
-    app.run(host="localhost", port=PORT)
+    app.run(host="127.0.0.1", port=PORT, debug=False)
 
 
 def _handle_forced_playback(initial_error):
@@ -1185,8 +1185,8 @@ if __name__ == "__main__":
             if IS_FIRST_RUN:
                 print("Status images updated")
                 print("Access the images at:")
-                print(f"http://localhost:{PORT}/left")
-                print(f"http://localhost:{PORT}/right")
+                print(f"http://127.0.0.1:{PORT}/left")
+                print(f"http://127.0.0.1:{PORT}/right")
                 IS_FIRST_RUN = False
 
         except spotipy.SpotifyOauthError as e:

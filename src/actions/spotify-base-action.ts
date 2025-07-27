@@ -7,14 +7,14 @@ import { SpotifyPlayerDial } from "./spotify-player-dial";
 export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings> {
     private static instances: SpotifyBaseAction[] = [];
     private static updateInterval: NodeJS.Timeout | null = null;
-    private static readonly STATES_URL = 'http://localhost:8491/states';
+    private static readonly STATES_URL = 'http://127.0.0.1:8491/states';
     private action: any;
 
     constructor() {
         super();
     }
 
-    protected async sendAction(actionType: string, url: string = 'http://localhost:8491/player', value?: number, additionalData?: any): Promise<void> {
+    protected async sendAction(actionType: string, url: string = 'http://127.0.0.1:8491/player', value?: number, additionalData?: any): Promise<void> {
         try {
             const response = await fetch(url, {
                 method: 'POST',
@@ -29,7 +29,7 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
                     ...additionalData
                 })
             });
-            
+
             const data = await response.text();
             streamDeck.logger.info(`POST response for ${actionType}: ${data}`);
         } catch (error) {
@@ -100,7 +100,7 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
         }
     }
 
-    private static async startGlobalUpdate(): Promise<void> {
+    static async startGlobalUpdate(): Promise<void> {
         if (!SpotifyBaseAction.updateInterval) {
             // Initial update
             await SpotifyBaseAction.updateAllButtonStates();
@@ -117,6 +117,8 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
                 },
                 refreshRate
             );
+        } else {
+            streamDeck.logger.debug(`Global timer already started`);
         }
     }
 
