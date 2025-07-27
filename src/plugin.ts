@@ -74,9 +74,9 @@ async function startPythonBackend() {
     pythonProcess = spawn(pythonPath, [path.join(__dirname, 'backend/backend.py')]);
 
     // Optional: Log Python process output and errors
-    pythonProcess?.stdout?.on('data', (data) => {
-        streamDeck.logger.info(`Python output: ${data}`);
-    });
+    // pythonProcess?.stdout?.on('data', (data) => {
+    //     streamDeck.logger.info(`Python output: ${data}`);
+    // });
 
     pythonProcess?.stderr?.on('data', (data) => {
         streamDeck.logger.error(`Python error: ${data}`);

@@ -30,7 +30,7 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
             });
 
             const data = await response.text();
-            streamDeck.logger.info(`POST response for ${actionType}: ${data}`);
+            streamDeck.logger.debug(`POST response for ${actionType}: ${data}`);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             streamDeck.logger.error(`POST request failed for ${actionType}: ${errorMessage}`);
@@ -55,7 +55,7 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
         const existingInstance = SpotifyBaseAction.instances.find(instance => instance === this);
         if (!existingInstance) {
             SpotifyBaseAction.instances.push(this);
-            streamDeck.logger.info(`Added instance. Total instances: ${SpotifyBaseAction.instances.length}`);
+            streamDeck.logger.debug(`Added instance. Total instances: ${SpotifyBaseAction.instances.length}`);
 
             // Ne démarrer la mise à jour que si c'est la première instance
             if (SpotifyBaseAction.instances.length === 1) {
