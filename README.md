@@ -66,7 +66,7 @@ To use the Spotify API, you need to create a Spotify application and get your cl
 1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/applications).
 2. Click on "Create an App".
 3. Fill in the required fields and click "Create".
-4. Set the redirect URI to `http://localhost:4202/callback`.
+4. Set the redirect URI to `http://127.0.0.1:4202/callback`.
 5. Copy the client ID and client secret into the Stream Deck dial settings.
 
 ## Usage
