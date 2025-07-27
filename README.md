@@ -54,7 +54,6 @@ git clone https://github.com/xmow49/stream-deck-spotify-plus
 cd stream-deck-spotify-plus
 
 pnpm install
-pnpm run install
 streamdeck link fr.dbenech.spotify-plus.sdPlugin
 streamdeck restart fr.dbenech.spotify-plus 
 ```
