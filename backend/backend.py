@@ -457,7 +457,7 @@ class SpotifyTrackInfo:
 
             # Reset playing state when no track
             self.track.is_playing = False
-            return {"error": "No track currently playing"}
+            return {"no_track": True}  # Changed from "error" to "no_track"
 
         except (
             spotipy.SpotifyException,
@@ -466,14 +466,67 @@ class SpotifyTrackInfo:
             IndexError,
         ) as e:
             self.track.is_playing = False
-            if e.http_status == 429:  # Too Many Requests
+            if hasattr(e, 'http_status') and e.http_status == 429:  # Too Many Requests
                 retry_after = int(e.headers.get("Retry-After", 1))
                 formatted_time = self._format_retry_time(retry_after)
                 error_msg = f"Rate limited. Retry after {formatted_time}"
                 print(error_msg)
                 self.create_rate_limit_image(retry_after)
                 return {"error": error_msg}
+            elif hasattr(e, 'http_status') and e.http_status == 401:  # Unauthorized
+                return {"auth_error": f"Authentication failed: {str(e)}"}
             return {"error": f"Error occurred: {str(e)}"}
+
+    def create_no_track_image(self):
+        """Create an image showing no track is playing with pause layout."""
+        background = Image.new("RGB", (400, 100), "black")
+        draw = ImageDraw.Draw(background)
+
+        # Create a dark album art area with pause icon
+        album_area = Image.new("RGB", (100, 100), "#1a1a1a")
+        
+        # Add pause overlay (same as the existing one)
+        self._add_pause_overlay_no_track(album_area)
+        background.paste(album_area, (0, 0))
+
+        try:
+            title_font = ImageFont.truetype("arial.ttf", 20)
+            artist_font = ImageFont.truetype("arial.ttf", 16)
+        except OSError:
+            title_font = ImageFont.load_default()
+            artist_font = ImageFont.load_default()
+
+        # Add placeholder text
+        draw.text((120, 15), "No track playing", fill="white", font=title_font)
+        draw.text((120, 45), "Start Spotify to play music", fill="#B3B3B3", font=artist_font)
+
+        # Draw progress bar background (empty)
+        draw.rounded_rectangle([120, 75, 340, 80], radius=1, fill="#404040")
+
+        # Add heart icon (not liked state)
+        self.image_handler.add_heart_icon(background, False)
+
+        # Save images
+        self.image_handler.save_images(background)
+
+    def _add_pause_overlay_no_track(self, background):
+        """Add pause overlay to empty album art area."""
+        overlay = Image.new("RGBA", (100, 100), (0, 0, 0, 0))  # Transparent background
+        draw_overlay = ImageDraw.Draw(overlay)
+
+        bar_width = 12
+        bar_height = 30
+        spacing = 10
+        start_x = (100 - (2 * bar_width + spacing)) // 2
+        start_y = (100 - bar_height) // 2
+
+        for x in (start_x, start_x + bar_width + spacing):
+            draw_overlay.rectangle(
+                [x, start_y, x + bar_width, start_y + bar_height],
+                fill="white",
+            )
+
+        background.paste(overlay, (0, 0), overlay)
 
     def list_devices(self):
         """Get and print all available Spotify devices."""
@@ -1146,7 +1199,23 @@ if __name__ == "__main__":
                     current_track_info = spotify_info.get_current_track_info()
                     LAST_API_CALL = current_time
 
-                    if "error" not in current_track_info:
+                    if "no_track" in current_track_info:
+                        # No track currently playing - show pause layout
+                        spotify_info.create_no_track_image()
+                        CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
+                    elif "auth_error" in current_track_info:
+                        # Authentication error - show login message
+                        print(f"\nAuthentication error: {current_track_info['auth_error']}")
+                        spotify_info.image_handler.create_login_message_image()
+                        NEEDS_LOGIN = True
+                        CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
+                    elif "error" in current_track_info:
+                        # Other errors - show error message
+                        print(f"\nError: {current_track_info['error']}")
+                        spotify_info.image_handler.create_error_message_image(current_track_info['error'])
+                        CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
+                    else:
+                        # Normal track playing - show full layout
                         spotify_info.track.last_info = current_track_info
                         spotify_info.create_status_images(current_track_info)
                         CURRENT_REFRESH_RATE = (
@@ -1154,9 +1223,6 @@ if __name__ == "__main__":
                             if spotify_info.track.is_playing
                             else REFRESH_RATE_PAUSED
                         )
-                    else:
-                        print(f"\n{current_track_info['error']}")
-                        CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
 
                 # Update progress bar only if playback is active
                 elif (

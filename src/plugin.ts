@@ -74,7 +74,7 @@ async function startPythonBackend() {
     });
 }
 
-streamDeck.logger.setLevel(LogLevel.DEBUG);
+streamDeck.logger.setLevel(LogLevel.INFO);
 streamDeck.actions.registerAction(new SpotifyPlayerDial());
 streamDeck.actions.registerAction(new SpotifyNextTrackAction());
 streamDeck.actions.registerAction(new SpotifyPreviousTrackAction());
