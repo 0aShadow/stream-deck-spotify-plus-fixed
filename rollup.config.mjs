@@ -69,10 +69,10 @@ const config = {
 						: path.join(destDir, 'venv', 'bin', 'python');
 
 					// Upgrade pip first
-					execSync(`"${pythonCmd}" -m pip install --upgrade pip`, { stdio: 'inherit' });
+					execSync(`"${pythonCmd}" -m pip install --upgrade pip --quiet`, { stdio: 'inherit' });
 
 					// Install requirements with verbose output
-					execSync(`"${pythonCmd}" -m pip install -r "${path.join(srcDir, 'requirements.txt')}"`, {
+					execSync(`"${pythonCmd}" -m pip install --quiet -r "${path.join(srcDir, 'requirements.txt')}"`, {
 						stdio: 'inherit'
 					});
 
