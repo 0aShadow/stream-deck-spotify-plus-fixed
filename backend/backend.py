@@ -779,6 +779,30 @@ def handle_right_action():
         print(f"Error handling right action: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/single", methods=["POST"])
+def handle_single_action():
+    """Handle single dial actions (like/unlike, etc)."""
+    try:
+        data = request.get_json()
+        if not data or "action" not in data:
+            return jsonify({"status": "error", "message": "Invalid action data"}), 400
+
+        # use the same logic as the right action
+        response = _process_right_action(data)
+
+        # Refresh track information after action (except for like toggle which handles its own refresh)
+        if data["action"] not in ("tap", "dialDown"):
+            if not _refresh_track_info():
+                return jsonify(
+                    {"status": "error", "message": "Failed to refresh track info"}
+                ), 500
+
+        return jsonify(response[0]), response[1]
+
+    except (spotipy.SpotifyException, requests.RequestException) as e:
+        print(f"Error handling right action: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 def _process_right_action(data):
     """Process right button action."""
