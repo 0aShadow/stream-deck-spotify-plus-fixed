@@ -21,14 +21,42 @@ This is a plugin to display the current Spotify player status on the Stream Deck
 
 To install the plugin, you need to have the Stream Deck software installed.
 
+### Dependencies Installation
+
+You need to have Node.js and pnpm installed on your system.
+```
+winget install OpenJS.NodeJS.LTS pnpm.pnpm
+```
+
+Next, close and reopen your terminal to ensure the `pnpm` command is available.
+
+```
+node --version
+# should be v22.17.1 or higher
+pnpm --version
+# should be 10.13.1 or higher
+```
+
+Run the following command to setup pnpm
+```
+pnpm setup
+```
+
+Next, close and reopen your terminal.
+
+### Plugin Installation
+
 Next, you need to run the following commands:
 
 ```
 pnpm add -g @elgato/cli
-pnpm run watch
+git clone https://github.com/xmow49/stream-deck-spotify-plus
+cd stream-deck-spotify-plus
+
+pnpm install
+pnpm run install
 streamdeck link fr.dbenech.spotify-plus.sdPlugin
 streamdeck restart fr.dbenech.spotify-plus 
-
 ```
 
 Next, restart the Stream Deck software.
