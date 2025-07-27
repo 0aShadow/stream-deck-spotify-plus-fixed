@@ -58,6 +58,9 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
             });
         } catch (error) {
             streamDeck.logger.error(`Failed to set image: ${error}`);
+            action.setFeedback({
+                "image": "imgs/action/dial-error.png",
+            });
         }
     }
 
