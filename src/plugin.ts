@@ -19,9 +19,17 @@ const __dirname = dirname(__filename);
 
 let pythonProcess: ReturnType<typeof spawn> | null = null;
 
-// // Handle global settings changes
+// Handle global settings changes
+let lastSettings: SpotifySettings | null = null;
 streamDeck.settings.onDidReceiveSettings(async (ev: DidReceiveSettingsEvent<SpotifySettings>) => {
     const settings = ev.payload.settings;
+    
+    if (lastSettings && JSON.stringify(lastSettings.global) === JSON.stringify(settings.global)) {
+        return;
+    }
+
+    lastSettings = settings;
+
     streamDeck.logger.info("Global settings changed: " + JSON.stringify(settings));
     streamDeck.settings.setGlobalSettings({
         ...settings.global,

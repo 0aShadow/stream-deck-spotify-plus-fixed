@@ -5,7 +5,7 @@ import { SpotifySettings, ButtonStates } from '../types';
 @action({ UUID: "fr.dbenech.spotify-plus.volume-up" })
 export class SpotifyVolumeUpAction extends SpotifyBaseAction {
     protected async handleAction(): Promise<void> {
-        await this.sendAction('volumeup');
+        await SpotifyBaseAction.sendAction('volumeup');
     }
 
     protected updateImage(action: any, states: ButtonStates): void {
@@ -16,7 +16,7 @@ export class SpotifyVolumeUpAction extends SpotifyBaseAction {
 @action({ UUID: "fr.dbenech.spotify-plus.volume-down" })
 export class SpotifyVolumeDownAction extends SpotifyBaseAction {
     protected async handleAction(): Promise<void> {
-        await this.sendAction('volumedown');
+        await SpotifyBaseAction.sendAction('volumedown');
     }
 
     protected updateImage(action: any, states: ButtonStates): void {
@@ -27,7 +27,7 @@ export class SpotifyVolumeDownAction extends SpotifyBaseAction {
 @action({ UUID: "fr.dbenech.spotify-plus.volume-mute" })
 export class SpotifyVolumeMuteAction extends SpotifyBaseAction {
     protected async handleAction(): Promise<void> {
-        await this.sendAction('volumemute');
+        await SpotifyBaseAction.sendAction('volumemute');
     }
 
     protected updateImage(action: any, states: ButtonStates): void {
@@ -44,7 +44,7 @@ export class SpotifyVolumeSetAction extends SpotifyBaseAction {
     }
 
     protected async handleAction(): Promise<void> {
-        await this.sendAction('volumeset', undefined, this.volume);
+        await SpotifyBaseAction.sendAction('volumeset', { value: this.volume });
     }
 
     protected updateImage(action: any, states: ButtonStates): void {

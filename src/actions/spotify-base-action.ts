@@ -14,7 +14,7 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
         super();
     }
 
-    protected async sendAction(actionType: string, url: string = 'http://127.0.0.1:8491/player', value?: number, additionalData?: any): Promise<void> {
+    static async sendAction(actionType: string, additionalData?: any, url: string = 'http://127.0.0.1:8491/player'): Promise<void> {
         try {
             const response = await fetch(url, {
                 method: 'POST',
@@ -24,7 +24,6 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
                 },
                 body: JSON.stringify({
                     action: actionType,
-                    value: value,
                     timestamp: new Date().toISOString(),
                     ...additionalData
                 })

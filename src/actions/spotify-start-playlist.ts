@@ -12,7 +12,7 @@ export class SpotifyStartPlaylistAction extends SpotifyBaseAction {
 
     protected async handleAction(): Promise<void> {
         if (this.playlistUri) {
-            await this.sendAction('startplaylist', undefined, undefined, { playlistUri: this.playlistUri });
+            await SpotifyBaseAction.sendAction('startplaylist', undefined, undefined, { playlistUri: this.playlistUri });
         }
     }
 

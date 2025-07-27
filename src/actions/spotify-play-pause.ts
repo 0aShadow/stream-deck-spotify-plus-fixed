@@ -5,7 +5,7 @@ import { ButtonStates } from "../types";
 @action({ UUID: "fr.dbenech.spotify-plus.play-pause" })
 export class SpotifyPlayPauseAction extends SpotifyBaseAction {
     protected async handleAction(): Promise<void> {
-        await this.sendAction('playpause');
+        await SpotifyBaseAction.sendAction('playpause');
         streamDeck.logger.info("Play/Pause action sent");
     }
 

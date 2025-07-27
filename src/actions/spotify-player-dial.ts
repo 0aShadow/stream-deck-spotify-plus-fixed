@@ -72,7 +72,7 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
 
             const url = ev.payload.settings.imgUrl || '';
             const actionId = ev.action.id;
-            
+
             // Update the stored URL for this action
             const existingEntry = SpotifyPlayerDial.dialActions.get(actionId);
             if (existingEntry) {
@@ -106,83 +106,58 @@ export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
         streamDeck.logger.debug(`Removing dial instance with ID: ${actionId}, remaining active: ${SpotifyPlayerDial.dialActions.size}`);
     }
 
-    private async sendAction(actionType: string, url: string, value?: number): Promise<void> {
-        const protocol = url.startsWith('https:') ? https : http;
-
-        const postData = JSON.stringify({
-            action: actionType,
-            value: value,
-            timestamp: new Date().toISOString()
-        });
-
-        const options = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData),
-                'User-Agent': 'StreamDeck-Plugin'
-            }
-        };
-
-        return new Promise((resolve, reject) => {
-            const request = protocol.request(url, options, (response) => {
-                let data = '';
-                response.on('data', (chunk) => {
-                    data += chunk;
-                });
-
-                response.on('end', () => {
-                    streamDeck.logger.info(`POST response for ${actionType}: ${data}`);
-                    resolve();
-                });
-            });
-
-            request.on('error', (error) => {
-                streamDeck.logger.error(`POST request failed for ${actionType}: ${error.message}`);
-                reject(error);
-            });
-
-            request.write(postData);
-            request.end();
-        });
-    }
 
     override onTouchTap(ev: TouchTapEvent<SpotifySettings>): void {
-        streamDeck.logger.info("onTouchTap triggered");
-        const url = ev.payload.settings.imgUrl || '';
-        this.sendAction('tap', url)
+        const action = ev.payload.settings.dialActionTap || '';
+        if (action === '') {
+            streamDeck.logger.info("onTouchTap triggered: no action");
+            return;
+        }
+        streamDeck.logger.info("onTouchTap triggered: " + action);
+        SpotifyBaseAction.sendAction(action)
             .then(() => SpotifyPlayerDial.updateAllDials())
             .then(() => SpotifyBaseAction.updateAllButtonStates())
             .catch(error => streamDeck.logger.error(`Error in onTouchTap: ${error}`));
     }
 
     override onDialDown(ev: DialDownEvent<SpotifySettings>): void {
-        streamDeck.logger.info("onDialDown triggered");
+        const action = ev.payload.settings.dialActionClick || '';
         const url = ev.payload.settings.imgUrl || '';
-        this.sendAction('dialDown', url)
+        if (action === '') {
+            streamDeck.logger.info("onDialDown triggered: no action");
+            return;
+        }
+        streamDeck.logger.info("onDialDown triggered: " + action);
+        SpotifyBaseAction.sendAction(action)
             .then(() => SpotifyPlayerDial.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialDown: ${error}`));
     }
 
     override onDialUp(ev: DialUpEvent<SpotifySettings>): void {
-        streamDeck.logger.info("onDialUp triggered");
-        const url = ev.payload.settings.imgUrl || '';
-        this.sendAction('dialUp', url)
-            .then(() => SpotifyPlayerDial.updateImage(ev.action, url))
-            .catch(error => streamDeck.logger.error(`Error in onDialUp: ${error}`));
     }
 
     override onDialRotate(ev: DialRotateEvent<SpotifySettings>): void {
         streamDeck.logger.info(`onDialRotate triggered with ticks: ${ev.payload.ticks}`);
+        let action = '';
+        if (ev.payload.ticks < 0) {
+            action = ev.payload.settings.dialActionDown || '';
+        } else {
+            action = ev.payload.settings.dialActionUp || '';
+        }
+        if (action === '') {
+            streamDeck.logger.info("onDialRotate triggered: no action");
+            return;
+        }
+        streamDeck.logger.info("onDialRotate triggered: " + action);
         const url = ev.payload.settings.imgUrl || '';
-        this.sendAction('rotate', url, ev.payload.ticks)
+        SpotifyBaseAction.sendAction(action, { ticks: Math.abs(ev.payload.ticks) })
             .then(() => SpotifyPlayerDial.updateImage(ev.action, url))
             .catch(error => streamDeck.logger.error(`Error in onDialRotate url:${url}, error:${error}`));
     }
 
     static async updateAllDials(): Promise<void> {
         streamDeck.logger.debug("Updating all dials: " + SpotifyPlayerDial.dialActions.size);
-        
+
         // Update all dial actions
         SpotifyPlayerDial.dialActions.forEach(({ action, url }) => {
             if (action && url) {

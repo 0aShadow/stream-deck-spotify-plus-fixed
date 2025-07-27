@@ -5,7 +5,7 @@ import { ButtonStates } from "../types";
 @action({ UUID: "fr.dbenech.spotify-plus.toggle-shuffle" })
 export class SpotifyToggleShuffleAction extends SpotifyBaseAction {
     protected async handleAction(): Promise<void> {
-        await this.sendAction('toggleshuffle');
+        await SpotifyBaseAction.sendAction('toggleshuffle');
     }
 
     protected updateImage(action: any, states: ButtonStates): void {

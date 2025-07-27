@@ -194,11 +194,11 @@ class SingleDialImageHandler:
         overlay = Image.new("RGBA", (200, 100), (0, 0, 0, 64))
         draw_overlay = ImageDraw.Draw(overlay)
 
-        # Pause bars centered in the left area (avoiding cover)
+        # Pause bars centered on the entire width
         bar_width = 6
         bar_height = 20
         spacing = 6
-        start_x = (140 - (2 * bar_width + spacing)) // 2 + 10  # Center in text area
+        start_x = (200 - (2 * bar_width + spacing)) // 2  # Center on full width (200px)
         start_y = (100 - bar_height) // 2
 
         for x in (start_x, start_x + bar_width + spacing):

@@ -6,6 +6,10 @@ export interface SpotifySettings {
     };
     imgUrl?: string;
     volume?: number;
+    dialActionDown?: string;
+    dialActionUp?: string;
+    dialActionClick?: string;
+    dialActionTap?: string;
     playlistUri?: string;
     [key: string]: any; // Add index signature for JsonObject compatibility
 }

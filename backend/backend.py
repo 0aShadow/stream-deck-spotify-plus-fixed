@@ -299,6 +299,19 @@ class VolumeState:
         self.last_unmuted_volume = 50  # Store the last unmuted volume
 
 
+class SeekState:
+    """Class to hold seek-related state."""
+
+    def __init__(self):
+        self.last_update = 0
+        self.current_position_ms = None
+        self.track_duration_ms = None
+        self.last_seek_time = 0
+        self.update_delay = 0.3  # Wait 300ms before API call to allow multiple rapid seeks
+        self.refresh_delay = 5.0  # Refresh position from API every 5 seconds
+        self.pending_seek_ms = 0  # Accumulated seek amount
+
+
 class SpotifyTrackInfo:
     """Handles Spotify track information and control."""
 
@@ -331,6 +344,7 @@ class SpotifyTrackInfo:
         self.single_dial = SingleDialImageHandler(self, self.image_handler)
         self.track = TrackState()
         self.volume = VolumeState()
+        self.seek = SeekState()
 
     def _format_retry_time(self, seconds):
         """Format seconds into readable time format (e.g., 2h 30m 15s)."""
@@ -570,7 +584,7 @@ class SpotifyTrackInfo:
             self.single_dial.create_single_dial_image(current_track_info)
 
             return {
-                "status": "succ/ess",
+                "status": "success",
                 "message": "Unliked track"
                 if not self.track.current_liked
                 else "Liked track",
@@ -688,177 +702,6 @@ class SpotifyTrackInfo:
 # Create SpotifyTrackInfo instance before Flask routes
 spotify_info = SpotifyTrackInfo()
 
-
-# Flask routes
-@app.route("/left", methods=["POST"])
-def handle_left_action():
-    """Handle left button actions (play/pause, next/previous track)."""
-    try:
-        data = request.get_json()
-        if not data or "action" not in data:
-            return jsonify({"status": "error", "message": "Invalid action data"}), 400
-
-        # Handle rotation for next/previous track
-        if data["action"] == "rotate":
-            return _handle_track_change(data)
-
-        # Handle existing play/pause logic for tap and dialDown
-        if data["action"] not in ("tap", "dialDown"):
-            return jsonify({"status": "error", "message": "No active playback"}), 400
-
-        current_playback = spotify_info.sp.current_playback()
-        current_playing_state = current_playback and current_playback.get("is_playing")
-
-        # Update UI immediately
-        if spotify_info.track.last_info:
-            spotify_info.track.last_info["is_playing"] = not current_playing_state
-            spotify_info.create_status_images(spotify_info.track.last_info)
-            spotify_info.single_dial.create_single_dial_image(spotify_info.track.last_info)
-        spotify_info.track.is_playing = not current_playing_state
-
-        # Send immediate response
-        response = {"status": "success", "message": "Playback toggled"}
-        threading.Thread(
-            target=_async_playback_toggle_with_refresh,
-            args=(current_playing_state,),
-            daemon=True,
-        ).start()
-
-        return jsonify(response), 200
-
-    except (ValueError, TypeError) as e:
-        print(f"Error handling left action: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 400
-    except spotipy.SpotifyException as e:
-        print(f"Spotify API error: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-def _async_playback_toggle_with_refresh(current_playing_state):
-    """Handle the actual API call asynchronously and refresh track info."""
-    try:
-        if current_playing_state:
-            spotify_info.sp.pause_playback()
-        else:
-            # Use specific device if not playing
-            this_device_id = os.getenv("SPOTIFY_THIS_DEVICE")
-            if this_device_id:
-                try:
-                    spotify_info.sp.start_playback(device_id=this_device_id)
-                except spotipy.SpotifyException:
-                    spotify_info.sp.start_playback()
-            else:
-                spotify_info.sp.start_playback()
-
-        # Refresh track information
-        _refresh_track_info()
-    except spotipy.SpotifyException as e:
-        print(f"Error in async playback toggle: {str(e)}")
-
-
-@app.route("/right", methods=["POST"])
-def handle_right_action():
-    """Handle right button actions (like/unlike, etc)."""
-    try:
-        data = request.get_json()
-        if not data or "action" not in data:
-            return jsonify({"status": "error", "message": "Invalid action data"}), 400
-
-        response = _process_right_action(data)
-
-        # Refresh track information after action (except for like toggle which handles its own refresh)
-        if data["action"] not in ("tap", "dialDown"):
-            if not _refresh_track_info():
-                return jsonify(
-                    {"status": "error", "message": "Failed to refresh track info"}
-                ), 500
-
-        return jsonify(response[0]), response[1]
-
-    except (spotipy.SpotifyException, requests.RequestException) as e:
-        print(f"Error handling right action: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/single", methods=["POST"])
-def handle_single_action():
-    """Handle single dial actions (like/unlike, etc)."""
-    try:
-        data = request.get_json()
-        if not data or "action" not in data:
-            return jsonify({"status": "error", "message": "Invalid action data"}), 400
-
-        # use the same logic as the right action
-        response = _process_right_action(data)
-
-        # Refresh track information after action (except for like toggle which handles its own refresh)
-        if data["action"] not in ("tap", "dialDown"):
-            if not _refresh_track_info():
-                return jsonify(
-                    {"status": "error", "message": "Failed to refresh track info"}
-                ), 500
-
-        return jsonify(response[0]), response[1]
-
-    except (spotipy.SpotifyException, requests.RequestException) as e:
-        print(f"Error handling right action: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-def _process_right_action(data):
-    """Process right button action."""
-    action = data["action"]
-
-    if action in ("tap", "dialDown"):
-        return spotify_info._handle_like_toggle()
-
-    if action == "rotate":
-        try:
-            print(f"Rotate action received: {data}")
-            now = time.time()
-            value = data.get("value", 0) * 3
-
-            # Refresh volume from API if too much time has passed since last rotation
-            if (
-                now - spotify_info.volume.last_rotate_time
-                > spotify_info.volume.refresh_delay
-            ):
-                current_playback = spotify_info.sp.current_playback()
-                if not current_playback:
-                    return {"status": "error", "message": "No active playback"}, 400
-                spotify_info.volume.current = current_playback["device"][
-                    "volume_percent"
-                ]
-            # Initialize current_volume if not set
-            elif spotify_info.volume.current is None:
-                current_playback = spotify_info.sp.current_playback()
-                if not current_playback:
-                    return {"status": "error", "message": "No active playback"}, 400
-                spotify_info.volume.current = current_playback["device"][
-                    "volume_percent"
-                ]
-
-            # Calculate new volume
-            new_volume = max(0, min(100, spotify_info.volume.current + value))
-            spotify_info.volume.current = new_volume
-            spotify_info.volume.last_rotate_time = now
-
-            # Only make API call if enough time has passed
-            if (
-                now - spotify_info.volume.last_update
-                >= spotify_info.volume.update_delay
-            ):
-                spotify_info.sp.volume(new_volume)
-                spotify_info.volume.last_update = now
-
-            return {"status": "success", "message": f"Volume set to {new_volume}%"}, 200
-
-        except spotipy.SpotifyException as e:
-            print(f"Error adjusting volume: {str(e)}")
-            return {"status": "error", "message": str(e)}, 500
-
-    return {"status": "error", "message": "Invalid action"}, 400
-
-
 @app.route("/left", methods=["GET"])
 def serve_left():
     """Serve the left image for Stream Deck display."""
@@ -929,50 +772,6 @@ def run_flask():
     """Run the Flask server."""
     app.run(host="127.0.0.1", port=PORT, debug=False)
 
-def _handle_track_change(data):
-    """Handle next/previous track based on rotation direction."""
-    print(f"Track change action received: {data}")
-    try:
-        now = time.time()
-        value = data.get("value", 0)
-
-        # If less than 500ms has passed since last action, ignore
-        if now - spotify_info.track.last_track_change_time < 0.5:
-            return {"status": "ignored", "message": "Action ignored (too soon)"}, 200
-
-        # If direction changed or more than 2 seconds passed, allow action
-        if (
-            spotify_info.track.last_track_change_direction is None
-            or now - spotify_info.track.last_track_change_time > 2.0
-            or (value > 0) != (spotify_info.track.last_track_change_direction > 0)
-        ):
-            spotify_info.track.last_track_change_time = now
-            spotify_info.track.last_track_change_direction = value
-
-            if value > 0:
-                spotify_info.sp.next_track()
-                print("Skipped to next track")
-                message = "Skipped to next track"
-            else:
-                spotify_info.sp.previous_track()
-                print("Returned to previous track")
-                message = "Returned to previous track"
-
-            # Refresh track information
-            if not _refresh_track_info():
-                return {
-                    "status": "error",
-                    "message": "Failed to refresh track info",
-                }, 500
-
-            return {"status": "success", "message": message}, 200
-
-        return {"status": "ignored", "message": "Action ignored"}, 200
-
-    except spotipy.SpotifyException as e:
-        print(f"Error changing track: {str(e)}")
-        return {"status": "error", "message": str(e)}, 500
-
 
 def _refresh_track_info():
     """Refresh track information and update display."""
@@ -1012,6 +811,72 @@ def _check_premium():
         return user["product"] == "premium"
     except:
         return False
+
+
+def _handle_seek(seconds, ticks=1):
+    """Handle seek forward/backward with optional ticks multiplier and buffering."""
+    try:
+        now = time.time()
+        total_seek_ms = seconds * ticks * 1000
+
+        # Refresh position from API if too much time has passed since last seek
+        if (
+            now - spotify_info.seek.last_seek_time > spotify_info.seek.refresh_delay
+        ):
+            current_playback = spotify_info.sp.current_playback()
+            if not current_playback or not current_playback.get("is_playing"):
+                return {"status": "error", "message": "No active playback"}, 400
+            spotify_info.seek.current_position_ms = current_playback.get("progress_ms", 0)
+            spotify_info.seek.track_duration_ms = current_playback["item"]["duration_ms"]
+            spotify_info.seek.pending_seek_ms = 0  # Reset pending seeks after refresh
+        # Initialize position if not set
+        elif spotify_info.seek.current_position_ms is None:
+            current_playback = spotify_info.sp.current_playback()
+            if not current_playback or not current_playback.get("is_playing"):
+                return {"status": "error", "message": "No active playback"}, 400
+            spotify_info.seek.current_position_ms = current_playback.get("progress_ms", 0)
+            spotify_info.seek.track_duration_ms = current_playback["item"]["duration_ms"]
+
+        # Add to pending seek amount
+        spotify_info.seek.pending_seek_ms += total_seek_ms
+        
+        # Calculate theoretical new position
+        theoretical_position = spotify_info.seek.current_position_ms + spotify_info.seek.pending_seek_ms
+        
+        # Apply limits
+        if theoretical_position >= spotify_info.seek.track_duration_ms - 1000:
+            spotify_info.seek.pending_seek_ms = spotify_info.seek.track_duration_ms - 1000 - spotify_info.seek.current_position_ms
+        elif theoretical_position < 0:
+            spotify_info.seek.pending_seek_ms = -spotify_info.seek.current_position_ms
+
+        spotify_info.seek.last_seek_time = now
+
+        # Only make API call if enough time has passed
+        if (
+            now - spotify_info.seek.last_update >= spotify_info.seek.update_delay
+        ):
+            new_position_ms = spotify_info.seek.current_position_ms + spotify_info.seek.pending_seek_ms
+            new_position_ms = max(0, min(new_position_ms, spotify_info.seek.track_duration_ms - 1000))
+            
+            spotify_info.sp.seek_track(new_position_ms)
+            spotify_info.seek.last_update = now
+            spotify_info.seek.current_position_ms = new_position_ms
+            spotify_info.seek.pending_seek_ms = 0  # Reset pending after API call
+
+        # Create appropriate message
+        total_seconds = abs(seconds * ticks)
+        direction = "forward" if seconds > 0 else "backward"
+        
+        if ticks > 1:
+            message = f"Seeking {direction} {total_seconds} seconds ({abs(seconds)}s x {ticks})"
+        else:
+            message = f"Seeking {direction} {total_seconds} seconds"
+            
+        return {"status": "success", "message": message}, 200
+        
+    except spotipy.SpotifyException as e:
+        print(f"Error seeking: {str(e)}")
+        return {"status": "error", "message": str(e)}, 500
 
 
 @app.route("/player", methods=["POST"])
@@ -1086,33 +951,106 @@ def handle_player_action():
                     ), 403
                 raise
         elif action == "volumeup":
-            current_playback = spotify_info.sp.current_playback()
-            if not current_playback:
-                return jsonify(
-                    {"status": "error", "message": "No active playback"}
-                ), 400
+            try:
+                now = time.time()
 
-            current_volume = current_playback["device"]["volume_percent"]
-            new_volume = min(100, current_volume + 10)
-            spotify_info.sp.volume(new_volume)
-            spotify_info.volume.last_unmuted_volume = new_volume
-            message = f"Volume increased to {new_volume}%"
+                # Refresh volume from API if too much time has passed since last action
+                if (
+                    now - spotify_info.volume.last_rotate_time
+                    > spotify_info.volume.refresh_delay
+                ):
+                    current_playback = spotify_info.sp.current_playback()
+                    if not current_playback:
+                        return jsonify(
+                            {"status": "error", "message": "No active playback"}
+                        ), 400
+                    spotify_info.volume.current = current_playback["device"][
+                        "volume_percent"
+                    ]
+                # Initialize current_volume if not set
+                elif spotify_info.volume.current is None:
+                    current_playback = spotify_info.sp.current_playback()
+                    if not current_playback:
+                        return jsonify(
+                            {"status": "error", "message": "No active playback"}
+                        ), 400
+                    spotify_info.volume.current = current_playback["device"][
+                        "volume_percent"
+                    ]
+
+                # Calculate new volume (+10)
+                new_volume = min(100, spotify_info.volume.current + 10)
+                spotify_info.volume.current = new_volume
+                spotify_info.volume.last_rotate_time = now
+
+                # Update last_unmuted_volume if volume > 0
+                if new_volume > 0:
+                    spotify_info.volume.last_unmuted_volume = new_volume
+
+                # Only make API call if enough time has passed
+                if (
+                    now - spotify_info.volume.last_update
+                    >= spotify_info.volume.update_delay
+                ):
+                    spotify_info.sp.volume(new_volume)
+                    spotify_info.volume.last_update = now
+
+                message = f"Volume increased to {new_volume}%"
+
+            except spotipy.SpotifyException as e:
+                print(f"Error increasing volume: {str(e)}")
+                return jsonify({"status": "error", "message": str(e)}), 500
+
         elif action == "volumedown":
-            current_playback = spotify_info.sp.current_playback()
-            if not current_playback:
-                return jsonify(
-                    {"status": "error", "message": "No active playback"}
-                ), 400
+            try:
+                now = time.time()
 
-            current_volume = current_playback["device"]["volume_percent"]
-            new_volume = max(0, current_volume - 10)
-            spotify_info.sp.volume(new_volume)
-            spotify_info.volume.last_unmuted_volume = (
-                new_volume
-                if new_volume > 0
-                else spotify_info.volume.last_unmuted_volume
-            )
-            message = f"Volume decreased to {new_volume}%"
+                # Refresh volume from API if too much time has passed since last action
+                if (
+                    now - spotify_info.volume.last_rotate_time
+                    > spotify_info.volume.refresh_delay
+                ):
+                    current_playback = spotify_info.sp.current_playback()
+                    if not current_playback:
+                        return jsonify(
+                            {"status": "error", "message": "No active playback"}
+                        ), 400
+                    spotify_info.volume.current = current_playback["device"][
+                        "volume_percent"
+                    ]
+                # Initialize current_volume if not set
+                elif spotify_info.volume.current is None:
+                    current_playback = spotify_info.sp.current_playback()
+                    if not current_playback:
+                        return jsonify(
+                            {"status": "error", "message": "No active playback"}
+                        ), 400
+                    spotify_info.volume.current = current_playback["device"][
+                        "volume_percent"
+                    ]
+
+                # Calculate new volume (-10)
+                new_volume = max(0, spotify_info.volume.current - 10)
+                spotify_info.volume.current = new_volume
+                spotify_info.volume.last_rotate_time = now
+
+                # Update last_unmuted_volume if volume > 0
+                if new_volume > 0:
+                    spotify_info.volume.last_unmuted_volume = new_volume
+
+                # Only make API call if enough time has passed
+                if (
+                    now - spotify_info.volume.last_update
+                    >= spotify_info.volume.update_delay
+                ):
+                    spotify_info.sp.volume(new_volume)
+                    spotify_info.volume.last_update = now
+
+                message = f"Volume decreased to {new_volume}%"
+
+            except spotipy.SpotifyException as e:
+                print(f"Error decreasing volume: {str(e)}")
+                return jsonify({"status": "error", "message": str(e)}), 500
         elif action == "volumemute":
             current_playback = spotify_info.sp.current_playback()
             if not current_playback:
@@ -1152,6 +1090,18 @@ def handle_player_action():
 
             spotify_info.sp.start_playback(context_uri=playlist_uri)
             message = "Started playlist"
+        elif action == "fastforward":
+            ticks = data.get("ticks", 1)
+            response = _handle_seek(5, ticks)
+            if response[1] != 200:
+                return jsonify(response[0]), response[1]
+            message = response[0]["message"]
+        elif action == "rewind":
+            ticks = data.get("ticks", 1)
+            response = _handle_seek(-5, ticks)
+            if response[1] != 200:
+                return jsonify(response[0]), response[1]
+            message = response[0]["message"]
         else:
             return jsonify({"status": "error", "message": "Invalid action"}), 400
 

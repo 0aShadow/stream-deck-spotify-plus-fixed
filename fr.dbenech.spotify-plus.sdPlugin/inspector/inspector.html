@@ -25,8 +25,23 @@
             <option value="http://127.0.0.1:8491/left">Left</option>
             <option value="http://127.0.0.1:8491/right">Right</option>
             <option value="http://127.0.0.1:8491/single">Single</option>
-
         </sdpi-select>
+    </sdpi-item>
+
+    <sdpi-item type="separator"></sdpi-item>
+
+    <h3 class="settings-title">Dial Actions</h3>
+    <sdpi-item label="Down(rotate left)">
+        <sdpi-select class="dialAction" setting="dialActionDown"></sdpi-select>
+    </sdpi-item>
+    <sdpi-item label="Up (rotate right)">
+        <sdpi-select class="dialAction" setting="dialActionUp"></sdpi-select>
+    </sdpi-item>
+    <sdpi-item label="Click">
+        <sdpi-select class="dialAction" setting="dialActionClick"></sdpi-select>
+    </sdpi-item>
+    <sdpi-item label="Tap (touch screen)">
+        <sdpi-select class="dialAction" setting="dialActionTap"></sdpi-select>
     </sdpi-item>
 
     <!-- Separator -->
@@ -62,6 +77,19 @@
 
     const { streamDeckClient } = SDPIComponents;
 
+    const dialActions = {
+        "next": "Next",
+        "previous": "Previous",
+        "playpause": "Play/Pause",
+        "togglelike": "Toggle Like",
+        "toggleshuffle": "Toggle Shuffle",
+        "volumedown": "Volume Down",
+        "volumeup": "Volume Up",
+        "volumemute": "Volume Mute",
+        "fastforward": "Seek Forward (5s)",
+        "rewind": "Seek Backward (5s)",
+    }
+
     // Load global settings when page loads
     window.addEventListener('load', async () => {
         try {
@@ -78,6 +106,27 @@
                     }
                 });
             }
+            // add all options in dial select
+            document.querySelectorAll('.dialAction').forEach(element => {
+                // Clear existing options first
+                element.innerHTML = '';
+                
+                // Add a default "None" option
+                const noneOption = document.createElement('option');
+                noneOption.value = '';
+                noneOption.textContent = 'None';
+                element.appendChild(noneOption);
+                
+                // Add all dial actions as options
+                Object.entries(dialActions).forEach(([key, label]) => {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = label;
+                    element.appendChild(option);
+                });
+            });
+
+
             await refreshDevices(globalSettings);
         } catch (error) {
             console.error('Error loading global settings:', error);
@@ -99,12 +148,12 @@
                     option.textContent = device.name + " (" + device.type + ")";
                     document.getElementById('thisDeviceSelect').appendChild(option);
                 });
-                
+
                 // set the selected device from global settings
                 if (globalSettings && globalSettings.thisDevice) {
                     // Check if the selected device exists in the list
                     const deviceExists = data.devices.some(device => device.id === globalSettings.thisDevice);
-                    
+
                     if (deviceExists) {
                         document.getElementById('thisDeviceSelect').value = globalSettings.thisDevice;
                     } else {

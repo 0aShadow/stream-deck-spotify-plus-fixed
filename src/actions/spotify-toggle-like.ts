@@ -5,7 +5,7 @@ import { ButtonStates } from "../types";
 @action({ UUID: "fr.dbenech.spotify-plus.toggle-like" })
 export class SpotifyToggleLikeAction extends SpotifyBaseAction {
     protected async handleAction(): Promise<void> {
-        await this.sendAction('togglelike');
+        await SpotifyBaseAction.sendAction('togglelike');
     }
 
     protected updateImage(action: any, states: ButtonStates): void {

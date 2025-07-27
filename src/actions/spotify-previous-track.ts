@@ -5,7 +5,7 @@ import { ButtonStates } from "../types";
 @action({ UUID: "fr.dbenech.spotify-plus.previous-track" })
 export class SpotifyPreviousTrackAction extends SpotifyBaseAction {
     protected async handleAction(): Promise<void> {
-        await this.sendAction('previous');
+        await SpotifyBaseAction.sendAction('previous');
     }
 
     protected updateImage(action: any, states: ButtonStates): void {
