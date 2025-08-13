@@ -28,13 +28,23 @@ REFRESH_RATE_PLAYING = 15
 REFRESH_RATE_PAUSED = 60
 
 # Configure logging for debugging
-# logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/backend.log', mode='w'),  # Reset file each time
+        # logging.StreamHandler()  # Keep console output
+    ]
+)
 
-# logger = logging.getLogger("spotipy")
-# logger.setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
 
-# pil_logger = logging.getLogger("PIL")
-# pil_logger.setLevel(logging.INFO)
+# Set external library log levels
+spotipy_logger = logging.getLogger("spotipy")
+spotipy_logger.setLevel(logging.WARNING)
+
+pil_logger = logging.getLogger("PIL")
+pil_logger.setLevel(logging.WARNING)
 
 
 app = Flask(__name__)
@@ -94,13 +104,14 @@ class SpotifyImageHandler:
             else:
                 background.paste(heart_image, (360, 65))
         except FileNotFoundError:
-            print(f"Warning: Heart icon file not found: {icon_path}")
+            logger.warning(f"Heart icon file not found: {icon_path}")
         except Exception as e:
-            print(f"Error loading heart icon: {str(e)}")
+            logger.error(f"Error loading heart icon: {str(e)}")
 
     def save_images(self, background):
         """Save the full, left and right images."""
         with self.image_lock:
+            logger.debug("Image lock acquired, saving images")
             self.full_image = BytesIO()
             background = background.convert("RGB")
             background.save(self.full_image, format="JPEG", quality=100)
@@ -120,17 +131,21 @@ class SpotifyImageHandler:
             right_half.save(self.right_image, format="JPEG", quality=100)
             self.left_image.seek(0)
             self.right_image.seek(0)
+            logger.debug("Images saved successfully")
 
     def _add_album_art(self, background, track_data):
         """Add album art to the background image with caching."""
         image_url = track_data["image_url"]
+        logger.debug(f"Adding album art from URL: {image_url[:50]}...")
 
         # Use cached image if URL hasn't changed
         if image_url == self.current_image_url and image_url in self.album_art_cache:
             album_art = self.album_art_cache[image_url]
         else:
             # Download and cache new image
+            logger.debug("Downloading new album art")
             response = requests.get(image_url, timeout=10)
+            logger.debug(f"Album art downloaded, status: {response.status_code}")
             album_art = Image.open(BytesIO(response.content))
             album_art = album_art.resize((100, 100))
             # Update cache
@@ -408,7 +423,7 @@ class SpotifyTrackInfo:
             return True
 
         except (requests.RequestException, IOError, ValueError) as e:
-            print(f"Error creating images: {str(e)}")
+            logger.error(f"Error creating images: {str(e)}")
             return False
 
     def _add_track_info(self, draw, track_data):
@@ -439,8 +454,10 @@ class SpotifyTrackInfo:
     def _get_progress(self, override_progress):
         """Get current playback progress."""
         if override_progress is not None:
+            logger.debug(f"Using override progress: {override_progress}")
             return override_progress
 
+        logger.debug("Getting current playback progress from API")
         current_playback = self.sp.current_playback()
         if current_playback:
             current_progress_ms = current_playback["progress_ms"]
@@ -454,12 +471,15 @@ class SpotifyTrackInfo:
 
     def get_current_track_info(self):
         """Get current track information from Spotify."""
+        logger.debug("Getting current track info from Spotify API")
         try:
             current_track = self.sp.current_user_playing_track()
+            logger.debug("Spotify API call for current track completed")
 
             if current_track is not None and current_track["item"] is not None:
                 # Update playing state
                 self.track.is_playing = current_track["is_playing"]
+                logger.debug(f"Track found: {current_track['item']['name']}, playing: {self.track.is_playing}")
                 track_data = {
                     "track_name": current_track["item"]["name"],
                     "image_url": current_track["item"]["album"]["images"][0]["url"],
@@ -475,6 +495,7 @@ class SpotifyTrackInfo:
 
             # Reset playing state when no track
             self.track.is_playing = False
+            logger.debug("No track currently playing")
             return {"no_track": True}  # Changed from "error" to "no_track"
 
         except (
@@ -488,7 +509,7 @@ class SpotifyTrackInfo:
                 retry_after = int(e.headers.get("Retry-After", 1))
                 formatted_time = self._format_retry_time(retry_after)
                 error_msg = f"Rate limited. Retry after {formatted_time}"
-                print(error_msg)
+                logger.warning(error_msg)
                 self.create_rate_limit_image(retry_after)
                 return {"error": error_msg}
             elif hasattr(e, 'http_status') and e.http_status == 401:  # Unauthorized
@@ -551,17 +572,17 @@ class SpotifyTrackInfo:
         try:
             devices = self.sp.devices()
             if devices and devices["devices"]:
-                print("\nAvailable Spotify devices:")
+                logger.info("\nAvailable Spotify devices:")
                 for device in devices["devices"]:
                     active = "* " if device["is_active"] else "  "
-                    print(
+                    logger.info(
                         f"{active}{device['name']} ({device['type']}) - ID: {device['id']}"
                     )
                 return devices["devices"]
-            print("No available devices found")
+            logger.info("No available devices found")
             return []
         except (spotipy.SpotifyException, requests.RequestException, KeyError) as e:
-            print(f"Error getting devices: {str(e)}")
+            logger.error(f"Error getting devices: {str(e)}")
             return []
 
     def _handle_like_toggle(self):
@@ -590,13 +611,15 @@ class SpotifyTrackInfo:
                 else "Liked track",
             }, 200
         except (spotipy.SpotifyException, requests.RequestException) as e:
-            print(f"Error toggling like status: {str(e)}")
+            logger.error(f"Error toggling like status: {str(e)}")
             return {"status": "error", "message": str(e)}, 500
 
     def update_button_states(self):
         """Update all button states based on current playback."""
+        logger.debug("Updating button states")
         try:
             current_playback = self.sp.current_playback()
+            logger.debug("Got current playback for button states")
             if not current_playback:
                 return False
 
@@ -613,9 +636,10 @@ class SpotifyTrackInfo:
             self.track.current_liked = is_liked
             self.track.shuffle_state = is_shuffle
             
+            logger.debug("Button states updated successfully")
             return True
         except Exception as e:
-            print(f"Error updating button states: {str(e)}")
+            logger.error(f"Error updating button states: {str(e)}")
             return False
 
     def handle_player_action(self, action_type):
@@ -705,6 +729,7 @@ spotify_info = SpotifyTrackInfo()
 @app.route("/left", methods=["GET"])
 def serve_left():
     """Serve the left image for Stream Deck display."""
+    # logger.debug("Request for left image received")
     try:
         with spotify_info.image_handler.image_lock:
             if spotify_info.image_handler.left_image:
@@ -712,13 +737,14 @@ def serve_left():
                 return send_file(img_copy, mimetype="image/bmp")
         return "Image not found", 404
     except IOError as e:
-        print(f"Error serving left image: {str(e)}")
+        logger.error(f"Error serving left image: {str(e)}")
         return str(e), 500
 
 
 @app.route("/right", methods=["GET"])
 def serve_right():
     """Serve the right image for Stream Deck display."""
+    # logger.debug("Request for right image received")
     try:
         with spotify_info.image_handler.image_lock:
             if spotify_info.image_handler.right_image:
@@ -726,7 +752,7 @@ def serve_right():
                 return send_file(img_copy, mimetype="image/bmp")
         return "Image not found", 404
     except IOError as e:
-        print(f"Error serving right image: {str(e)}")
+        logger.error(f"Error serving right image: {str(e)}")
         return str(e), 500
 
 
@@ -740,13 +766,14 @@ def serve_all():
                 return send_file(img_copy, mimetype="image/jpeg")
         return "Image not found", 404
     except IOError as e:
-        print(f"Error serving full image: {str(e)}")
+        logger.error(f"Error serving full image: {str(e)}")
         return str(e), 500
 
 
 @app.route("/single", methods=["GET"])
 def serve_single():
     """Serve the single dial image."""
+    # logger.debug("Request for single dial image received")
     try:
         with spotify_info.image_handler.image_lock:
             if spotify_info.single_dial.single_image:
@@ -754,7 +781,7 @@ def serve_single():
                 return send_file(img_copy, mimetype="image/jpeg")
         return "Image not found", 404
     except IOError as e:
-        print(f"Error serving single dial image: {str(e)}")
+        logger.error(f"Error serving single dial image: {str(e)}")
         return str(e), 500
 
 
@@ -775,11 +802,15 @@ def run_flask():
 
 def _refresh_track_info():
     """Refresh track information and update display."""
+    logger.debug("Starting track info refresh")
     # Small delay to let Spotify update the state
     time.sleep(0.1)
+    logger.debug("Post-action delay completed")
 
     # Update track information
+    logger.debug("Getting track info for refresh")
     track_info = spotify_info.get_current_track_info()
+    logger.debug("Track info retrieved for refresh")
     if "error" not in track_info and "no_track" not in track_info:
         spotify_info.track.last_info = track_info
 
@@ -793,13 +824,17 @@ def _refresh_track_info():
         except:
             pass  # Keep existing shuffle state if update fails
 
+        logger.debug("Creating status images after refresh")
         spotify_info.create_status_images(track_info)
         spotify_info.single_dial.create_single_dial_image(track_info)
+        logger.debug("Images created successfully after refresh")
         return True
     elif "no_track" in track_info:
         # Handle no track case
+        logger.debug("Creating no-track images")
         spotify_info.create_no_track_image()
         spotify_info.single_dial.create_single_dial_no_track_image()
+        logger.debug("No-track images created")
         return True
     return False
 
@@ -875,15 +910,17 @@ def _handle_seek(seconds, ticks=1):
         return {"status": "success", "message": message}, 200
         
     except spotipy.SpotifyException as e:
-        print(f"Error seeking: {str(e)}")
+        logger.error(f"Error seeking: {str(e)}")
         return {"status": "error", "message": str(e)}, 500
 
 
 @app.route("/player", methods=["POST"])
 def handle_player_action():
     """Handle all player actions."""
+    logger.debug("Player action request received")
     try:
         data = request.get_json()
+        logger.debug(f"Player action data: {data}")
         if not data or "action" not in data:
             return jsonify({"status": "error", "message": "Invalid action data"}), 400
 
@@ -891,37 +928,52 @@ def handle_player_action():
         value = data.get("value")
 
         if action == "next":
+            logger.debug("Executing next track action")
             spotify_info.sp.next_track()
+            logger.debug("Next track API call completed")
             message = "Skipped to next track"
         elif action == "previous":
+            logger.debug("Executing previous track action")
             spotify_info.sp.previous_track()
+            logger.debug("Previous track API call completed")
             message = "Returned to previous track"
         elif action == "playpause":
+            logger.debug("Executing play/pause action")
             current_playback = spotify_info.sp.current_playback()
+            logger.debug("Got current playback for play/pause")
             current_playing_state = current_playback and current_playback.get(
                 "is_playing"
             )
 
             if current_playing_state:
+                logger.debug("Pausing playback")
                 spotify_info.sp.pause_playback()
+                logger.debug("Pause API call completed")
                 message = "Paused playback"
             else:
                 # Use specific device if not playing
                 this_device_id = os.getenv("SPOTIFY_THIS_DEVICE")
                 if this_device_id:
                     try:
+                        logger.debug(f"Starting playback on device: {this_device_id}")
                         spotify_info.sp.start_playback(device_id=this_device_id)
+                        logger.debug("Start playback API call completed")
                         message = "Started playback on specified device"
                     except spotipy.SpotifyException:
+                        logger.debug("Device-specific playback failed, trying default")
                         spotify_info.sp.start_playback()
+                        logger.debug("Default start playback API call completed")
                         message = "Started playback"
                 else:
+                    logger.debug("Starting playback (no specific device)")
                     spotify_info.sp.start_playback()
+                    logger.debug("Start playback API call completed")
                     message = "Started playback"
         elif action == "togglelike":
             response = spotify_info._handle_like_toggle()
             return jsonify(response[0]), response[1]
         elif action == "toggleshuffle":
+            logger.debug("Processing shuffle toggle action")
             # Vérifier si l'utilisateur a un compte Premium
             if not _check_premium():
                 return jsonify(
@@ -932,6 +984,7 @@ def handle_player_action():
                 ), 403
 
             try:
+                logger.debug("Getting current playback for shuffle toggle")
                 current_playback = spotify_info.sp.current_playback()
                 if not current_playback:
                     return jsonify(
@@ -939,7 +992,9 @@ def handle_player_action():
                     ), 400
 
                 current_shuffle = current_playback.get("shuffle_state", False)
+                logger.debug(f"Toggling shuffle from {current_shuffle} to {not current_shuffle}")
                 spotify_info.sp.shuffle(not current_shuffle)
+                logger.debug("Shuffle toggle API call completed")
                 message = "Shuffle " + ("disabled" if current_shuffle else "enabled")
             except spotipy.SpotifyException as e:
                 if e.http_status == 403:
@@ -953,13 +1008,16 @@ def handle_player_action():
         elif action == "volumeup":
             try:
                 now = time.time()
+                logger.debug("Processing volume up action")
 
                 # Refresh volume from API if too much time has passed since last action
                 if (
                     now - spotify_info.volume.last_rotate_time
                     > spotify_info.volume.refresh_delay
                 ):
+                    logger.debug("Refreshing volume from API for volume up")
                     current_playback = spotify_info.sp.current_playback()
+                    logger.debug("Volume up refresh API call completed")
                     if not current_playback:
                         return jsonify(
                             {"status": "error", "message": "No active playback"}
@@ -992,25 +1050,30 @@ def handle_player_action():
                     now - spotify_info.volume.last_update
                     >= spotify_info.volume.update_delay
                 ):
+                    logger.debug(f"Setting volume up to {new_volume}%")
                     spotify_info.sp.volume(new_volume)
+                    logger.debug("Volume up API call completed")
                     spotify_info.volume.last_update = now
 
                 message = f"Volume increased to {new_volume}%"
 
             except spotipy.SpotifyException as e:
-                print(f"Error increasing volume: {str(e)}")
+                logger.error(f"Error increasing volume: {str(e)}")
                 return jsonify({"status": "error", "message": str(e)}), 500
 
         elif action == "volumedown":
             try:
                 now = time.time()
+                logger.debug("Processing volume down action")
 
                 # Refresh volume from API if too much time has passed since last action
                 if (
                     now - spotify_info.volume.last_rotate_time
                     > spotify_info.volume.refresh_delay
                 ):
+                    logger.debug("Refreshing volume from API for volume down")
                     current_playback = spotify_info.sp.current_playback()
+                    logger.debug("Volume down refresh API call completed")
                     if not current_playback:
                         return jsonify(
                             {"status": "error", "message": "No active playback"}
@@ -1043,16 +1106,20 @@ def handle_player_action():
                     now - spotify_info.volume.last_update
                     >= spotify_info.volume.update_delay
                 ):
+                    logger.debug(f"Setting volume down to {new_volume}%")
                     spotify_info.sp.volume(new_volume)
+                    logger.debug("Volume down API call completed")
                     spotify_info.volume.last_update = now
 
                 message = f"Volume decreased to {new_volume}%"
 
             except spotipy.SpotifyException as e:
-                print(f"Error decreasing volume: {str(e)}")
+                logger.error(f"Error decreasing volume: {str(e)}")
                 return jsonify({"status": "error", "message": str(e)}), 500
         elif action == "volumemute":
+            logger.debug("Processing volume mute action")
             current_playback = spotify_info.sp.current_playback()
+            logger.debug("Got current playback for mute action")
             if not current_playback:
                 return jsonify(
                     {"status": "error", "message": "No active playback"}
@@ -1062,33 +1129,43 @@ def handle_player_action():
 
             if current_volume > 0:
                 # Si le volume n'est pas à 0, on sauvegarde le volume actuel et on mute
+                logger.debug(f"Muting volume (was {current_volume}%)")
                 spotify_info.volume.last_unmuted_volume = current_volume
                 spotify_info.sp.volume(0)
+                logger.debug("Mute API call completed")
                 message = "Volume muted"
             else:
                 # Si le volume est à 0, on restore le dernier volume
                 restore_volume = spotify_info.volume.last_unmuted_volume
+                logger.debug(f"Unmuting to volume {restore_volume}%")
                 spotify_info.sp.volume(restore_volume)
+                logger.debug("Unmute API call completed")
                 message = f"Volume restored to {restore_volume}%"
         elif action == "volumeset":
+            logger.debug(f"Processing volume set action to {value}%")
             if value is None:
                 return jsonify(
                     {"status": "error", "message": "Volume value is required"}
                 ), 400
 
             volume = max(0, min(100, value))
+            logger.debug(f"Setting volume to {volume}%")
             spotify_info.sp.volume(volume)
+            logger.debug("Volume set API call completed")
             if volume > 0:
                 spotify_info.volume.last_unmuted_volume = volume
             message = f"Volume set to {volume}%"
         elif action == "startplaylist":
             playlist_uri = data.get("playlistUri")
+            logger.debug(f"Processing start playlist action: {playlist_uri}")
             if not playlist_uri:
                 return jsonify(
                     {"status": "error", "message": "Playlist URI is required"}
                 ), 400
 
+            logger.debug("Starting playlist playback")
             spotify_info.sp.start_playback(context_uri=playlist_uri)
+            logger.debug("Start playlist API call completed")
             message = "Started playlist"
         elif action == "fastforward":
             ticks = data.get("ticks", 1)
@@ -1106,7 +1183,9 @@ def handle_player_action():
             return jsonify({"status": "error", "message": "Invalid action"}), 400
 
         # Refresh track information after any action
+        logger.debug("Refreshing track info after player action")
         if not _refresh_track_info():
+            logger.warning("Failed to refresh track info after player action")
             return jsonify(
                 {"status": "error", "message": "Failed to refresh track info"}
             ), 500
@@ -1114,10 +1193,10 @@ def handle_player_action():
         return jsonify({"status": "success", "message": message}), 200
 
     except spotipy.SpotifyException as e:
-        print(f"Spotify API error: {str(e)}")
+        logger.error(f"Spotify API error in player action {action}: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
     except Exception as e:
-        print(f"Error handling player action: {str(e)}")
+        logger.error(f"Error handling player action {action}: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -1198,12 +1277,14 @@ def get_devices():
 if __name__ == "__main__":
     # Check if port is available before starting
     if not check_port_available(PORT):
-        print(f"Error: Port {PORT} is already in use. Please stop the existing service or change the port.")
+        logger.error(f"Error: Port {PORT} is already in use. Please stop the existing service or change the port.")
         sys.exit(1)
 
     # Start Flask server in a separate thread
+    logger.info(f"Starting Flask server on port {PORT}")
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
+    logger.info("Flask thread started")
 
     IS_FIRST_RUN = True
     LAST_API_CALL = 0
@@ -1212,21 +1293,39 @@ if __name__ == "__main__":
     HAS_CREDENTIALS_ERROR = False
 
     # Create initial login message
+    logger.info("Creating initial login images")
     spotify_info.image_handler.create_login_message_image()
     spotify_info.single_dial.create_single_dial_login_image()
+    logger.info("Initial login images created")
 
     while True:
         current_time = time.time()
+        logger.debug(f"Main loop iteration started at {current_time}")
 
         try:
+            logger.debug("Entering try block")
             # Only try authentication if we don't have a credentials error
             if NEEDS_LOGIN and not HAS_CREDENTIALS_ERROR:
+                logger.debug("Attempting Spotify authentication")
                 spotify_info.sp.current_playback()
+                logger.debug("Authentication API call completed")
                 NEEDS_LOGIN = False
-                print("Successfully authenticated with Spotify")
+                logger.info("Successfully authenticated with Spotify")
+            else:
+                logger.debug(f"Skipping auth - NEEDS_LOGIN: {NEEDS_LOGIN}, HAS_CREDENTIALS_ERROR: {HAS_CREDENTIALS_ERROR}")
 
             # Only proceed with normal operation if logged in
             if not NEEDS_LOGIN and not HAS_CREDENTIALS_ERROR:
+                logger.debug("Entering normal operation block")
+                logger.debug(f"Time check: current={current_time:.2f}, last_api={LAST_API_CALL:.2f}, diff={current_time - LAST_API_CALL:.2f}, refresh_rate={CURRENT_REFRESH_RATE}")
+                
+                # Debug track end detection
+                if (
+                    spotify_info.track.is_playing
+                    and spotify_info.image_handler.current_track_start_time
+                ):
+                    logger.debug(f"Track end check: start_time={spotify_info.image_handler.current_track_start_time}, duration={spotify_info.image_handler.current_track_duration}, elapsed={current_time - spotify_info.image_handler.current_track_start_time:.2f}")
+                
                 # Only check for track end if we have valid timing information
                 if (
                     spotify_info.track.is_playing
@@ -1248,29 +1347,34 @@ if __name__ == "__main__":
 
                 # Only make API call if refresh delay has elapsed
                 if current_time - LAST_API_CALL >= CURRENT_REFRESH_RATE or IS_FIRST_RUN:
+                    logger.debug(f"Making API call - time since last: {current_time - LAST_API_CALL:.2f}s")
+                    logger.debug("About to call get_current_track_info()")
                     current_track_info = spotify_info.get_current_track_info()
+                    logger.debug("Main loop API call completed")
                     LAST_API_CALL = current_time
 
                     if "no_track" in current_track_info:
                         # No track currently playing - show pause layout
+                        logger.debug("No track detected, creating no-track layout")
                         spotify_info.create_no_track_image()
                         spotify_info.single_dial.create_single_dial_no_track_image()
                         CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
                     elif "auth_error" in current_track_info:
                         # Authentication error - show login message
-                        print(f"\nAuthentication error: {current_track_info['auth_error']}")
+                        logger.error(f"\nAuthentication error: {current_track_info['auth_error']}")
                         spotify_info.image_handler.create_login_message_image()
                         spotify_info.single_dial.create_single_dial_login_image()
                         NEEDS_LOGIN = True
                         CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
                     elif "error" in current_track_info:
                         # Other errors - show error message
-                        print(f"\nError: {current_track_info['error']}")
+                        logger.error(f"\nError: {current_track_info['error']}")
                         spotify_info.image_handler.create_error_message_image(current_track_info['error'])
                         spotify_info.single_dial.create_single_dial_error_image(current_track_info['error'])
                         CURRENT_REFRESH_RATE = REFRESH_RATE_PAUSED
                     else:
                         # Normal track playing - show full layout
+                        logger.debug("Normal track detected, creating full layout")
                         spotify_info.track.last_info = current_track_info
                         spotify_info.create_status_images(current_track_info)
                         spotify_info.single_dial.create_single_dial_image(current_track_info)
@@ -1280,7 +1384,7 @@ if __name__ == "__main__":
                             else REFRESH_RATE_PAUSED
                         )
 
-                # Update progress bar only if playback is active
+                # Update progress bar only if playback is active and no API call was made this iteration
                 elif (
                     spotify_info.track.is_playing
                     and spotify_info.image_handler.current_track_start_time
@@ -1296,29 +1400,36 @@ if __name__ == "__main__":
                         / spotify_info.image_handler.current_track_duration,
                         1.0,
                     )
+                    logger.debug(f"Updating progress bar, ratio: {progress_ratio:.3f}")
                     spotify_info.create_status_images(
                         spotify_info.track.last_info, override_progress=progress_ratio
                     )
                     spotify_info.single_dial.create_single_dial_image(
                         spotify_info.track.last_info, override_progress=progress_ratio
                     )
+                else:
+                    logger.debug(f"No progress update: is_playing={spotify_info.track.is_playing}, has_start_time={spotify_info.image_handler.current_track_start_time is not None}, has_duration={spotify_info.image_handler.current_track_duration is not None}, has_last_info={spotify_info.track.last_info is not None}")
 
                 # Update button states at the refresh rate
                 if current_time - LAST_API_CALL >= CURRENT_REFRESH_RATE or IS_FIRST_RUN:
+                    logger.debug("Updating button states")
                     spotify_info.update_button_states()
+                    logger.debug("Button states updated")
+            else:
+                logger.debug("Skipping normal operation - not authenticated or has credentials error")
 
             if IS_FIRST_RUN:
-                print("Status images updated")
-                print("Access the images at:")
-                print(f"http://127.0.0.1:{PORT}/left")
-                print(f"http://127.0.0.1:{PORT}/right")
-                print(f"http://127.0.0.1:{PORT}/single")
+                logger.info("Status images updated")
+                logger.info("Access the images at:")
+                logger.info(f"http://127.0.0.1:{PORT}/left")
+                logger.info(f"http://127.0.0.1:{PORT}/right")
+                logger.info(f"http://127.0.0.1:{PORT}/single")
                 IS_FIRST_RUN = False
 
         except spotipy.SpotifyOauthError as e:
             error_desc = str(e)
             if "invalid_client" in error_desc:
-                print("Error: Invalid Spotify credentials")
+                logger.error("Error: Invalid Spotify credentials")
                 spotify_info.image_handler.create_error_message_image(
                     "Invalid Spotify credentials"
                 )
@@ -1327,7 +1438,7 @@ if __name__ == "__main__":
                 )
                 HAS_CREDENTIALS_ERROR = True
             else:
-                print(f"Authentication error: {error_desc}")
+                logger.error(f"Authentication error: {error_desc}")
                 spotify_info.image_handler.create_error_message_image(
                     "Authentication error"
                 )
@@ -1337,7 +1448,7 @@ if __name__ == "__main__":
                 HAS_CREDENTIALS_ERROR = True
 
         except spotipy.SpotifyException as e:
-            print(f"Spotify error: {str(e)}")
+            logger.error(f"Spotify error: {str(e)}")
             spotify_info.image_handler.create_error_message_image(
                 "Spotify error occurred"
             )
@@ -1347,6 +1458,10 @@ if __name__ == "__main__":
             HAS_CREDENTIALS_ERROR = True
 
         except Exception as e:
-            print(f"Error in main loop: {str(e)}")
+            logger.error(f"Error in main loop: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
+        logger.debug("Main loop iteration completed, sleeping 1s")
         time.sleep(1)  # Always wait 1 second between iterations
