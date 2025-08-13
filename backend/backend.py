@@ -15,11 +15,13 @@ from spotipy.oauth2 import SpotifyOAuth
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from flask import Flask, send_file, request, jsonify
+import platform
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from single_dial import SingleDialImageHandler
+from font_utils import get_unicode_font
 
 # Constants
 PORT = 8491
@@ -178,12 +180,8 @@ class SpotifyImageHandler:
 
     def _add_track_info(self, draw, track_data):
         """Add track name and artist information."""
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 20)
-            artist_font = ImageFont.truetype("arial.ttf", 16)
-        except OSError:
-            title_font = ImageFont.load_default()
-            artist_font = ImageFont.load_default()
+        title_font = get_unicode_font(20)
+        artist_font = get_unicode_font(16)
 
         # Add track name
         track_name = self._truncate_text(track_data["track_name"], title_font, 260)
@@ -220,10 +218,7 @@ class SpotifyImageHandler:
         background = Image.new("RGB", (400, 100), "black")
         draw = ImageDraw.Draw(background)
 
-        try:
-            font = ImageFont.truetype("arial.ttf", 24)
-        except OSError:
-            font = ImageFont.load_default()
+        font = get_unicode_font(24)
 
         message = "Please Login to Spotify"
         # Get text size for centering
@@ -243,12 +238,8 @@ class SpotifyImageHandler:
         background = Image.new("RGB", (400, 100), "black")
         draw = ImageDraw.Draw(background)
 
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 20)
-            desc_font = ImageFont.truetype("arial.ttf", 16)
-        except OSError:
-            title_font = ImageFont.load_default()
-            desc_font = ImageFont.load_default()
+        title_font = get_unicode_font(20)
+        desc_font = get_unicode_font(16)
 
         # Draw title
         title = "Error"
@@ -381,10 +372,7 @@ class SpotifyTrackInfo:
         background = Image.new("RGB", (400, 100), "black")
         draw = ImageDraw.Draw(background)
 
-        try:
-            font = ImageFont.truetype("arial.ttf", 20)
-        except OSError:
-            font = ImageFont.load_default()
+        font = get_unicode_font(20)
 
         formatted_time = self._format_retry_time(retry_after)
         message = f"Too Many Requests\nRetry after: {formatted_time}"
@@ -428,12 +416,8 @@ class SpotifyTrackInfo:
 
     def _add_track_info(self, draw, track_data):
         """Add track name and artist information."""
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 20)
-            artist_font = ImageFont.truetype("arial.ttf", 16)
-        except OSError:
-            title_font = ImageFont.load_default()
-            artist_font = ImageFont.load_default()
+        title_font = get_unicode_font(20)
+        artist_font = get_unicode_font(16)
 
         # Add track name
         track_name = self._truncate_text(track_data["track_name"], title_font, 260)
@@ -528,12 +512,8 @@ class SpotifyTrackInfo:
         self._add_pause_overlay_no_track(album_area)
         background.paste(album_area, (0, 0))
 
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 20)
-            artist_font = ImageFont.truetype("arial.ttf", 16)
-        except OSError:
-            title_font = ImageFont.load_default()
-            artist_font = ImageFont.load_default()
+        title_font = get_unicode_font(20)
+        artist_font = get_unicode_font(16)
 
         # Add placeholder text
         draw.text((120, 15), "No track playing", fill="white", font=title_font)

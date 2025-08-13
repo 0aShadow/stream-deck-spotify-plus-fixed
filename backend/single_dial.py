@@ -5,6 +5,7 @@ import os
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import requests
+from font_utils import get_unicode_font
 
 
 class SingleDialImageHandler:
@@ -96,12 +97,8 @@ class SingleDialImageHandler:
 
     def _add_single_dial_track_info(self, draw, track_data, override_progress):
         """Add track info optimized for single dial display."""
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 16)
-            artist_font = ImageFont.truetype("arial.ttf", 14)
-        except OSError:
-            title_font = ImageFont.load_default()
-            artist_font = ImageFont.load_default()
+        title_font = get_unicode_font(16)
+        artist_font = get_unicode_font(14)
 
         # Track name (split into 2 lines if needed, avoid cover area)
         track_name = track_data["track_name"]
@@ -232,10 +229,7 @@ class SingleDialImageHandler:
         background = Image.new("RGB", (200, 100), "black")
         draw = ImageDraw.Draw(background)
 
-        try:
-            font = ImageFont.truetype("arial.ttf", 16)
-        except OSError:
-            font = ImageFont.load_default()
+        font = get_unicode_font(16)
 
         # Multi-line text to fit better
         draw.text((10, 20), "Please Login", fill="white", font=font)
@@ -252,12 +246,8 @@ class SingleDialImageHandler:
         background = Image.new("RGB", (200, 100), "black")
         draw = ImageDraw.Draw(background)
 
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 16)
-            desc_font = ImageFont.truetype("arial.ttf", 14)
-        except OSError:
-            title_font = ImageFont.load_default()
-            desc_font = ImageFont.load_default()
+        title_font = get_unicode_font(16)
+        desc_font = get_unicode_font(14)
 
         # Title
         draw.text((10, 20), "Error", fill="#FF0000", font=title_font)
@@ -279,12 +269,8 @@ class SingleDialImageHandler:
         background = Image.new("RGB", (200, 100), "black")
         draw = ImageDraw.Draw(background)
 
-        try:
-            font = ImageFont.truetype("arial.ttf", 16)
-            small_font = ImageFont.truetype("arial.ttf", 14)
-        except OSError:
-            font = ImageFont.load_default()
-            small_font = ImageFont.load_default()
+        font = get_unicode_font(16)
+        small_font = get_unicode_font(14)
 
         # Add placeholder cover (dark area)
         placeholder = Image.new("RGB", (50, 50), "#1a1a1a")
