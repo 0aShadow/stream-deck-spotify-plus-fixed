@@ -1,11 +1,14 @@
 """Single dial image generation for Spotify integration with Stream Deck."""
 
+import logging
 import time
 import os
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from font_utils import get_unicode_font
+
+logger = logging.getLogger(__name__)
 
 
 class SingleDialImageHandler:
@@ -54,7 +57,7 @@ class SingleDialImageHandler:
             return True
 
         except (requests.RequestException, IOError, ValueError) as e:
-            print(f"Error creating single dial image: {str(e)}")
+            logger.error(f"Error creating single dial image: {str(e)}")
             return False
 
     def _add_single_album_cover(self, background, track_data):
@@ -62,35 +65,35 @@ class SingleDialImageHandler:
         try:
             # Check if image_url exists in track_data
             if "image_url" not in track_data:
-                print("No image_url in track_data")
+                logger.error("No image_url in track_data")
                 raise ValueError("No image_url available")
             
             image_url = track_data["image_url"]
-            print(f"Loading album cover from: {image_url}")
+            logger.debug(f"Loading album cover from: {image_url}")
 
             # Use cached image if URL hasn't changed
             if image_url == self.image_handler.current_image_url and image_url in self.image_handler.album_art_cache:
                 album_art = self.image_handler.album_art_cache[image_url]
-                print("Using cached album art")
+                logger.debug("Using cached album art")
             else:
                 # Download and cache new image
-                print("Downloading new album art...")
+                logger.debug("Downloading new album art...")
                 response = requests.get(image_url, timeout=10)
                 response.raise_for_status()  # Raise exception for bad status codes
                 album_art = Image.open(BytesIO(response.content))
                 # Update cache
                 self.image_handler.album_art_cache = {image_url: album_art}  # Only keep latest image
                 self.image_handler.current_image_url = image_url
-                print("Successfully downloaded and cached album art")
+                logger.debug("Successfully downloaded and cached album art")
 
             # Resize to 50x50 and place in top right
             album_art = album_art.resize((50, 50), Image.Resampling.LANCZOS)
             background.paste(album_art, (150, 0))
-            print("Album art successfully pasted to image")
+            logger.debug("Album art successfully pasted to image")
 
         except Exception as e:
-            print(f"Error loading album cover for single dial: {str(e)}")
-            print(f"Track data keys: {list(track_data.keys()) if track_data else 'No track_data'}")
+            logger.error(f"Error loading album cover for single dial: {str(e)}")
+            logger.error(f"Track data keys: {list(track_data.keys()) if track_data else 'No track_data'}")
             # Create placeholder if image fails
             placeholder = Image.new("RGB", (50, 50), "#1a1a1a")
             background.paste(placeholder, (150, 0))
@@ -182,9 +185,9 @@ class SingleDialImageHandler:
             else:
                 background.paste(heart_image, (180, 75))
         except FileNotFoundError:
-            print(f"Warning: Heart icon file not found: {icon_path}")
+            logger.warning(f"Warning: Heart icon file not found: {icon_path}")
         except Exception as e:
-            print(f"Error loading heart icon: {str(e)}")
+            logger.error(f"Error loading heart icon: {str(e)}")
 
     def _add_pause_overlay_single(self, background):
         """Add pause overlay for single dial."""

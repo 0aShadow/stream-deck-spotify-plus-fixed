@@ -1,6 +1,7 @@
 """Backend server for Spotify integration with Stream Deck."""
 
 import time
+import traceback
 import logging
 import threading
 from threading import Lock
@@ -9,6 +10,8 @@ import os
 import socket
 import sys
 from dotenv import load_dotenv
+
+import debugpy
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -565,6 +568,53 @@ class SpotifyTrackInfo:
             logger.error(f"Error getting devices: {str(e)}")
             return []
 
+    def _try_activate_device(self):
+        """Try to activate an available device when no active device is found."""
+        try:
+            logger.debug("No active device found, trying to activate one...")
+            devices = self.sp.devices()
+            
+            if not devices or not devices.get("devices"):
+                logger.warning("No devices available to activate")
+                return None
+                
+            available_devices = devices["devices"]
+            logger.debug(f"Found {len(available_devices)} available devices")
+            
+            # Check if there's already an active device
+            active_device = next((d for d in available_devices if d["is_active"]), None)
+            if active_device:
+                logger.debug(f"Active device found: {active_device['name']}")
+                return active_device["id"]
+            
+            # Try to use the preferred device from environment variable
+            preferred_device_id = os.getenv("SPOTIFY_THIS_DEVICE")
+            if preferred_device_id:
+                preferred_device = next((d for d in available_devices if d["id"] == preferred_device_id), None)
+                if preferred_device:
+                    logger.debug(f"Using preferred device: {preferred_device['name']}")
+                    return preferred_device["id"]
+            
+            # Otherwise, use the first available device (prefer computer/smartphone over others)
+            priority_types = ["Computer", "Smartphone", "Tablet"]
+            for device_type in priority_types:
+                device = next((d for d in available_devices if d["type"] == device_type), None)
+                if device:
+                    logger.debug(f"Selected {device_type} device: {device['name']}")
+                    return device["id"]
+            
+            # If no priority device found, use the first one
+            if available_devices:
+                device = available_devices[0]
+                logger.debug(f"Using first available device: {device['name']}")
+                return device["id"]
+                
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error trying to activate device: {str(e)}")
+            return None
+
     def _handle_like_toggle(self):
         """Handle toggling track like status."""
         current_track_info = self.track.last_info
@@ -939,16 +989,46 @@ def handle_player_action():
                         spotify_info.sp.start_playback(device_id=this_device_id)
                         logger.debug("Start playback API call completed")
                         message = "Started playback on specified device"
+                    except spotipy.SpotifyException as e:
+                        logger.debug(f"Device-specific playback failed: {str(e)}")
+                        # Check if it's a "no active device" error
+                        if hasattr(e, 'http_status') and e.http_status == 404 and "No active device found" in str(e):
+                            logger.debug("No active device error detected, trying to activate a device")
+                            device_id = spotify_info._try_activate_device()
+                            if device_id:
+                                try:
+                                    spotify_info.sp.start_playback(device_id=device_id)
+                                    message = "Started playback on activated device"
                     except spotipy.SpotifyException:
-                        logger.debug("Device-specific playback failed, trying default")
+                                    # If still fails, try without device_id
+                                    spotify_info.sp.start_playback()
+                                    message = "Started playback"
+                            else:
+                                logger.warning("No devices available to activate")
+                                raise e
+                        else:
                         spotify_info.sp.start_playback()
                         logger.debug("Default start playback API call completed")
                         message = "Started playback"
                 else:
+                    try:
                     logger.debug("Starting playback (no specific device)")
                     spotify_info.sp.start_playback()
                     logger.debug("Start playback API call completed")
                     message = "Started playback"
+                    except spotipy.SpotifyException as e:
+                        # Check if it's a "no active device" error
+                        if hasattr(e, 'http_status') and e.http_status == 404 and "No active device found" in str(e):
+                            logger.debug("No active device error detected, trying to activate a device")
+                            device_id = spotify_info._try_activate_device()
+                            if device_id:
+                                spotify_info.sp.start_playback(device_id=device_id)
+                                message = "Started playback on activated device"
+                            else:
+                                logger.warning("No devices available to activate")
+                                raise e
+                        else:
+                            raise e
         elif action == "togglelike":
             response = spotify_info._handle_like_toggle()
             return jsonify(response[0]), response[1]
@@ -1255,6 +1335,9 @@ def get_devices():
 
 
 if __name__ == "__main__":
+# debugpy.listen(5678)
+    # logger.info(f"PID: {os.getpid()}")
+
     # Check if port is available before starting
     if not check_port_available(PORT):
         logger.error(f"Error: Port {PORT} is already in use. Please stop the existing service or change the port.")
@@ -1440,7 +1523,6 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"Error in main loop: {str(e)}")
             logger.error(f"Exception type: {type(e).__name__}")
-            import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
 
         logger.debug("Main loop iteration completed, sleeping 1s")

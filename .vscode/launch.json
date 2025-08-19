@@ -10,7 +10,23 @@
 			"request": "launch",
 			"program": "${file}",
 			"console": "integratedTerminal",
-			"justMyCode": false
+			"justMyCode": false,
+			"cwd": "${workspaceFolder}/fr.dbenech.spotify-plus.sdPlugin",
+			"python": "${workspaceFolder}/fr.dbenech.spotify-plus.sdPlugin/bin/backend/venv/Scripts/python.exe"
+		},
+		{
+			"name": "Python: Remote Attach",
+			"type": "debugpy",
+			"request": "attach",
+			"port": 5678,
+			"host": "127.0.0.1",
+			"redirectOutput": true,
+			"pathMappings": [
+				{
+					"localRoot": "${workspaceFolder}",
+					"remoteRoot": "."
+				}
+			]
 		},
 		{
 			"name": "Attach to Plugin",
