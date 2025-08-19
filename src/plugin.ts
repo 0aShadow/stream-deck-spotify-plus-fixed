@@ -7,6 +7,7 @@ import { SpotifyToggleLikeAction } from "./actions/spotify-toggle-like";
 import { SpotifyToggleShuffleAction } from "./actions/spotify-toggle-shuffle";
 import { SpotifyVolumeUpAction, SpotifyVolumeDownAction, SpotifyVolumeMuteAction, SpotifyVolumeSetAction } from "./actions/spotify-volume-control";
 import { SpotifyStartPlaylistAction } from "./actions/spotify-start-playlist";
+import { SpotifyBaseAction } from "./actions/spotify-base-action";
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -34,6 +35,9 @@ streamDeck.settings.onDidReceiveSettings(async (ev: DidReceiveSettingsEvent<Spot
     streamDeck.settings.setGlobalSettings({
         ...settings.global,
     });
+
+    // Restart global timer to apply new refresh rate
+    SpotifyBaseAction.restartGlobalUpdate();
 
     startPythonBackend();
 });

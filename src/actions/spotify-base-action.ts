@@ -7,6 +7,7 @@ import { SpotifyPlayerDial } from "./spotify-player-dial";
 export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings> {
     private static instances: SpotifyBaseAction[] = [];
     private static updateInterval: NodeJS.Timeout | null = null;
+    private static isStartingTimer: boolean = false;
     private static readonly STATES_URL = 'http://127.0.0.1:8491/states';
     private action: any;
 
@@ -100,7 +101,15 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
     }
 
     static async startGlobalUpdate(): Promise<void> {
-        if (!SpotifyBaseAction.updateInterval) {
+        // Prevent race conditions - only allow one timer creation at a time
+        if (SpotifyBaseAction.updateInterval || SpotifyBaseAction.isStartingTimer) {
+            streamDeck.logger.debug(`Global timer already started or starting`);
+            return;
+        }
+
+        SpotifyBaseAction.isStartingTimer = true;
+        
+        try {
             // Initial update
             await SpotifyBaseAction.updateAllButtonStates();
             await SpotifyPlayerDial.updateAllDials();
@@ -108,6 +117,7 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
             const settings = await streamDeck.settings.getGlobalSettings();
             const refreshRate = Number(settings.refreshRate) * 1000 || 5000;
             streamDeck.logger.info(`Starting global update with refresh rate: ${refreshRate}`);
+            
             SpotifyBaseAction.updateInterval = setInterval(
                 async () => {
                     streamDeck.logger.debug("Timer triggered - updating all buttons and dials");
@@ -116,9 +126,15 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
                 },
                 refreshRate
             );
-        } else {
-            streamDeck.logger.debug(`Global timer already started`);
+        } finally {
+            SpotifyBaseAction.isStartingTimer = false;
         }
+    }
+
+    static restartGlobalUpdate(): void {
+        streamDeck.logger.info("Restarting global timer due to settings change");
+        SpotifyBaseAction.stopGlobalUpdate();
+        SpotifyBaseAction.startGlobalUpdate();
     }
 
     private static stopGlobalUpdate(): void {

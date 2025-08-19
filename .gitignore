@@ -6,3 +6,5 @@ node_modules/
 *.sdPlugin/logs
 .cache
 .env
+
+__pycache__/
