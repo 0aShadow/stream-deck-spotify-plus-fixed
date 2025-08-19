@@ -40,12 +40,12 @@
 			]
 		},
 		{
-			"Icon": "imgs/action/play_pause",
+			"Icon": "imgs/action/pause",
 			"UUID": "fr.dbenech.spotify-plus.play-pause",
 			"Name": "Play/Pause",
 			"States": [
 				{
-					"Image": "imgs/action/play_pause"
+					"Image": "imgs/action/pause"
 				}
 			]
 		},
@@ -70,52 +70,32 @@
 			]
 		},
 		{
-			"Icon": "imgs/action/volume-up",
+			"Icon": "imgs/action/volume_up",
 			"UUID": "fr.dbenech.spotify-plus.volume-up",
 			"Name": "Volume Up",
 			"States": [
 				{
-					"Image": "imgs/action/volume-up"
+					"Image": "imgs/action/volume_up"
 				}
 			]
 		},
 		{
-			"Icon": "imgs/action/volume-down",
+			"Icon": "imgs/action/volume_down",
 			"UUID": "fr.dbenech.spotify-plus.volume-down",
 			"Name": "Volume Down",
 			"States": [
 				{
-					"Image": "imgs/action/volume-down"
+					"Image": "imgs/action/volume_down"
 				}
 			]
 		},
 		{
-			"Icon": "imgs/action/volume",
+			"Icon": "imgs/action/mute",
 			"UUID": "fr.dbenech.spotify-plus.volume-mute",
 			"Name": "Volume Mute",
 			"States": [
 				{
 					"Image": "imgs/action/mute"
-				}
-			]
-		},
-		{
-			"Icon": "imgs/action/volume",
-			"UUID": "fr.dbenech.spotify-plus.volume-set",
-			"Name": "Set Volume",
-			"States": [
-				{
-					"Image": "imgs/action/volume"
-				}
-			]
-		},
-		{
-			"Icon": "imgs/action/playlist",
-			"UUID": "fr.dbenech.spotify-plus.start-playlist",
-			"Name": "Start Playlist",
-			"States": [
-				{
-					"Image": "imgs/action/playlist"
 				}
 			]
 		}

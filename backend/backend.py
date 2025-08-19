@@ -37,8 +37,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/backend.log', mode='w'),  # Reset file each time
-        # logging.StreamHandler()  # Keep console output
+        # logging.FileHandler('logs/backend.log', mode='w'),  # Reset file each time
+        logging.StreamHandler()  # Keep console output
     ]
 )
 
@@ -999,7 +999,7 @@ def handle_player_action():
                                 try:
                                     spotify_info.sp.start_playback(device_id=device_id)
                                     message = "Started playback on activated device"
-                    except spotipy.SpotifyException:
+                                except spotipy.SpotifyException:
                                     # If still fails, try without device_id
                                     spotify_info.sp.start_playback()
                                     message = "Started playback"
@@ -1007,15 +1007,15 @@ def handle_player_action():
                                 logger.warning("No devices available to activate")
                                 raise e
                         else:
-                        spotify_info.sp.start_playback()
-                        logger.debug("Default start playback API call completed")
-                        message = "Started playback"
+                            spotify_info.sp.start_playback()
+                            logger.debug("Default start playback API call completed")
+                            message = "Started playback"
                 else:
                     try:
-                    logger.debug("Starting playback (no specific device)")
-                    spotify_info.sp.start_playback()
-                    logger.debug("Start playback API call completed")
-                    message = "Started playback"
+                        logger.debug("Starting playback (no specific device)")
+                        spotify_info.sp.start_playback()
+                        logger.debug("Start playback API call completed")
+                        message = "Started playback"
                     except spotipy.SpotifyException as e:
                         # Check if it's a "no active device" error
                         if hasattr(e, 'http_status') and e.http_status == 404 and "No active device found" in str(e):

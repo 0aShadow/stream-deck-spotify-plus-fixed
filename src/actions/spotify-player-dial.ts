@@ -8,6 +8,11 @@ import { SpotifyBaseAction } from "./spotify-base-action";
 export class SpotifyPlayerDial extends SingletonAction<SpotifySettings> {
     private static dialActions: Map<string, { action: any, url: string }> = new Map();
 
+    // Register our update function with SpotifyBaseAction to avoid circular dependency
+    static {
+        SpotifyBaseAction.registerDialUpdateCallback(() => SpotifyPlayerDial.updateAllDials());
+    }
+
     private static async updateImage(action: any, url: string) {
         try {
             const protocol = url.startsWith('https:') ? https : http;

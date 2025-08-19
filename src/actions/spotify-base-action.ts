@@ -2,14 +2,20 @@ import streamDeck, { action, SingletonAction, KeyDownEvent, KeyUpEvent, DidRecei
 import https from 'https';
 import http from 'http';
 import { SpotifySettings, ButtonStates } from '../types';
-import { SpotifyPlayerDial } from "./spotify-player-dial";
+// Removed circular dependency - SpotifyPlayerDial will register itself
 
 export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings> {
     private static instances: SpotifyBaseAction[] = [];
     private static updateInterval: NodeJS.Timeout | null = null;
     private static isStartingTimer: boolean = false;
     private static readonly STATES_URL = 'http://127.0.0.1:8491/states';
+    private static dialUpdateCallback: (() => Promise<void>) | null = null;
     private action: any;
+
+    // Method for SpotifyPlayerDial to register its update function
+    static registerDialUpdateCallback(callback: () => Promise<void>): void {
+        SpotifyBaseAction.dialUpdateCallback = callback;
+    }
 
     constructor() {
         super();
@@ -43,9 +49,11 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
         streamDeck.logger.info("Key down triggered");
         this.handleAction()
             .catch(error => streamDeck.logger.error(`Error in onKeyDown: ${error}`))
-            .then(() => {
-                SpotifyBaseAction.updateAllButtonStates();
-                SpotifyPlayerDial.updateAllDials();
+            .then(async () => {
+                await SpotifyBaseAction.updateAllButtonStates();
+                if (SpotifyBaseAction.dialUpdateCallback) {
+                    await SpotifyBaseAction.dialUpdateCallback();
+                }
             });
     }
 
@@ -112,7 +120,9 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
         try {
             // Initial update
             await SpotifyBaseAction.updateAllButtonStates();
-            await SpotifyPlayerDial.updateAllDials();
+            if (SpotifyBaseAction.dialUpdateCallback) {
+                await SpotifyBaseAction.dialUpdateCallback();
+            }
 
             const settings = await streamDeck.settings.getGlobalSettings();
             const refreshRate = Number(settings.refreshRate) * 1000 || 5000;
@@ -122,7 +132,9 @@ export abstract class SpotifyBaseAction extends SingletonAction<SpotifySettings>
                 async () => {
                     streamDeck.logger.debug("Timer triggered - updating all buttons and dials");
                     await SpotifyBaseAction.updateAllButtonStates();
-                    await SpotifyPlayerDial.updateAllDials();
+                    if (SpotifyBaseAction.dialUpdateCallback) {
+                        await SpotifyBaseAction.dialUpdateCallback();
+                    }
                 },
                 refreshRate
             );

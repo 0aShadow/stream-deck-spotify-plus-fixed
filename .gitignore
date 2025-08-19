@@ -7,4 +7,17 @@ node_modules/
 .cache
 .env
 
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build outputs
+build/
+dist/
+backend/build/
+backend/dist/
+backend/venv/
+
+*.streamDeckPlugin

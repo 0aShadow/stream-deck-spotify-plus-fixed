@@ -34,20 +34,3 @@ export class SpotifyVolumeMuteAction extends SpotifyBaseAction {
         action.setImage(states.is_muted ? 'imgs/action/mute.png' : 'imgs/action/volume.png');
     }
 }
-
-@action({ UUID: "fr.dbenech.spotify-plus.volume-set" })
-export class SpotifyVolumeSetAction extends SpotifyBaseAction {
-    private volume: number = 50;
-
-    override onDidReceiveSettings(ev: DidReceiveSettingsEvent<SpotifySettings>): void {
-        this.volume = ev.payload.settings.volume || 50;
-    }
-
-    protected async handleAction(): Promise<void> {
-        await SpotifyBaseAction.sendAction('volumeset', { value: this.volume });
-    }
-
-    protected updateImage(action: any, states: ButtonStates): void {
-        action.setImage('imgs/action/volume.png');
-    }
-} 
