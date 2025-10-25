@@ -29,8 +29,9 @@ from font_utils import get_unicode_font
 # Constants
 PORT = 8491
 DISABLE_FLASK_LOGS = True
-REFRESH_RATE_PLAYING = 15
-REFRESH_RATE_PAUSED = 60
+# before: 15 / 60
+REFRESH_RATE_PLAYING = 1     # schneller Poll bei Wiedergabe
+REFRESH_RATE_PAUSED  = 1     # gemächlicher Poll im Pause-Zustand
 
 # Configure logging for debugging
 logging.basicConfig(
@@ -53,6 +54,14 @@ pil_logger.setLevel(logging.WARNING)
 
 
 app = Flask(__name__)
+
+# Disable caching
+@app.after_request
+def add_no_cache_headers(resp):
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 # Disable Flask access logs if DISABLE_FLASK_LOGS is True
@@ -764,7 +773,7 @@ def serve_left():
         with spotify_info.image_handler.image_lock:
             if spotify_info.image_handler.left_image:
                 img_copy = BytesIO(spotify_info.image_handler.left_image.getvalue())
-                return send_file(img_copy, mimetype="image/bmp")
+                return send_file(img_copy, mimetype="image/jpeg")
         return "Image not found", 404
     except IOError as e:
         logger.error(f"Error serving left image: {str(e)}")
@@ -779,7 +788,7 @@ def serve_right():
         with spotify_info.image_handler.image_lock:
             if spotify_info.image_handler.right_image:
                 img_copy = BytesIO(spotify_info.image_handler.right_image.getvalue())
-                return send_file(img_copy, mimetype="image/bmp")
+                return send_file(img_copy, mimetype="image/jpeg")
         return "Image not found", 404
     except IOError as e:
         logger.error(f"Error serving right image: {str(e)}")
@@ -944,6 +953,45 @@ def _handle_seek(seconds, ticks=1):
         return {"status": "error", "message": str(e)}, 500
 
 
+def _refresh_images_immediately_after_skip(prev_track_id: str | None, timeout: float = 2.5, interval: float = 0.2) -> bool:
+    """
+    Nach Next/Previous sofort die neue Track-ID abwarten und Bilder rendern.
+    Wartet bis zu `timeout` Sekunden und fragt alle `interval` Sekunden die API ab.
+    """
+    try:
+        # Mini-Grace-Period, until Spotify API is updated
+        time.sleep(0.15)
+
+        end = time.time() + timeout
+        new_info = None
+
+        while time.time() < end:
+            info = spotify_info.get_current_track_info()
+            # Success: new track with new ID
+            if info and "track_id" in info and (prev_track_id is None or info["track_id"] != prev_track_id):
+                new_info = info
+                break
+            time.sleep(interval)
+
+        if new_info:
+            # Update track information and images immediately
+            spotify_info.track.last_info = new_info
+            spotify_info.create_status_images(new_info)
+            spotify_info.single_dial.create_single_dial_image(new_info)
+            return True
+
+        # Fallback: Use last track information
+        if spotify_info.track.last_info:
+            spotify_info.create_status_images(spotify_info.track.last_info)
+            spotify_info.single_dial.create_single_dial_image(spotify_info.track.last_info)
+
+        return False
+
+    except Exception as e:
+        logger.warning(f"Immediate refresh after skip failed: {e}")
+        return False
+
+
 @app.route("/player", methods=["POST"])
 def handle_player_action():
     """Handle all player actions."""
@@ -959,13 +1007,17 @@ def handle_player_action():
 
         if action == "next":
             logger.debug("Executing next track action")
+            prev_id = getattr(spotify_info.track, "current_id", None)
             spotify_info.sp.next_track()
             logger.debug("Next track API call completed")
+            _refresh_images_immediately_after_skip(prev_id)
             message = "Skipped to next track"
         elif action == "previous":
             logger.debug("Executing previous track action")
+            prev_id = getattr(spotify_info.track, "current_id", None)
             spotify_info.sp.previous_track()
             logger.debug("Previous track API call completed")
+            _refresh_images_immediately_after_skip(prev_id)
             message = "Returned to previous track"
         elif action == "playpause":
             logger.debug("Executing play/pause action")
